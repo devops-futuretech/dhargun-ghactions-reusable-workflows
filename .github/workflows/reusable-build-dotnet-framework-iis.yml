@@ -97,7 +97,7 @@ jobs:
       # Validate MSBuild & NuGet
       - name: Setup .NET Framework
         id: setup
-        uses: ./.github/actions/awl-setup-dotnetframework-iis
+        uses: devops-futuretech/dhargun-ghactions-reusable-workflows/.github/actions/awl-setup-dotnetframework-iis@main
 
       # Restore NuGet packages
       - name: Restore NuGet Packages
@@ -137,7 +137,7 @@ jobs:
 
       # Upload artifact
       - name: Upload Artifact
-        uses: ./.github/actions/awl-upload-artifact
+        uses: devops-futuretech/dhargun-ghactions-reusable-workflows/.github/actions/awl-upload-artifact@main
         with:
 
           artifact-name: ${{ inputs.artifact-name }}
