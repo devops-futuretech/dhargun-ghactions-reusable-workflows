@@ -1,8 +1,8 @@
 # ==========================================================================================
 # Action    : AWL - Setup Flutter
-# Purpose   : Install and configure Flutter SDK for reusable workflows
+# Purpose   : Install and configure Flutter SDK and Java
 # Author    : AWL DevOps Team
-# Version   : v1.0
+# Version   : v1.1
 # ==========================================================================================
 
 name: AWL - Setup Flutter
@@ -17,7 +17,7 @@ inputs:
   flutter-version:
     description: Flutter SDK Version
     required: false
-    default: "stable"
+    default: "3.38.4"
 
   java-version:
     description: Java Version
@@ -30,7 +30,7 @@ inputs:
     default: "temurin"
 
   cache:
-    description: Enable Pub Cache
+    description: Enable Flutter/Pub cache
     required: false
     default: "true"
 
@@ -46,44 +46,84 @@ runs:
 
   steps:
 
-    # Install Java
+    # ======================================================================================
+    # JAVA
+    # ======================================================================================
+
     - name: Setup Java
+
       uses: actions/setup-java@v5
+
       with:
+
         distribution: ${{ inputs.distribution }}
+
         java-version: ${{ inputs.java-version }}
+
         cache: gradle
 
-    # Install Flutter SDK
+    # ======================================================================================
+    # FLUTTER
+    # ======================================================================================
+
     - name: Setup Flutter
+
       uses: subosito/flutter-action@v2
+
       with:
+
         flutter-version: ${{ inputs.flutter-version }}
+
         cache: ${{ inputs.cache }}
 
-    # Install Flutter packages
-    - name: Flutter Pub Get
-      shell: pwsh
-      working-directory: ${{ inputs.working-directory }}
-      run: flutter pub get
+    # ======================================================================================
+    # FLUTTER VERSION
+    # ======================================================================================
 
-    # Validate Flutter installation
-    - name: Flutter Doctor
+    - name: Show Flutter Version
+
       shell: pwsh
+
       run: |
+
+        flutter --version
+
+    # ======================================================================================
+    # FLUTTER DOCTOR
+    # ======================================================================================
+
+    - name: Flutter Doctor
+
+      shell: pwsh
+
+      run: |
+
         flutter doctor -v
 
-    # Export Flutter version
+    # ======================================================================================
+    # EXPORT VERSION
+    # ======================================================================================
+
     - name: Export Version
+
       id: version
+
       shell: pwsh
+
       run: |
+
         $version = flutter --version | Select-Object -First 1
+
         "version=$version" >> $env:GITHUB_OUTPUT
 
-    # Publish setup summary
+    # ======================================================================================
+    # SUMMARY
+    # ======================================================================================
+
     - name: Setup Summary
+
       shell: pwsh
+
       run: |
 
         @"
