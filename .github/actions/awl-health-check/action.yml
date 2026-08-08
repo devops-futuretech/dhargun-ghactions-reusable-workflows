@@ -1,0 +1,109 @@
+# ==========================================================================================
+# Action    : AWL - Health Check
+# Purpose   : Validate deployed application health endpoint
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Health Check
+
+description: >
+  Composite action to validate application availability after deployment.
+
+author: AWL DevOps Team
+
+inputs:
+
+  health-url:
+    description: Health endpoint URL
+    required: true
+
+  expected-status:
+    description: Expected HTTP Status Code
+    required: false
+    default: "200"
+
+  retry-count:
+    description: Retry attempts
+    required: false
+    default: "10"
+
+  retry-delay:
+    description: Delay between retries (seconds)
+    required: false
+    default: "15"
+
+outputs:
+
+  response-code:
+    description: Last HTTP response code
+    value: ${{ steps.health.outputs.status }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Validate application endpoint
+    - name: Execute Health Check
+      id: health
+      shell: pwsh
+      run: |
+
+        $url="${{ inputs.health-url }}"
+        $expected=${{ inputs.expected-status }}
+        $retry=${{ inputs.retry-count }}
+        $delay=${{ inputs.retry-delay }}
+
+        $status=0
+
+        for($i=1;$i -le $retry;$i++)
+        {
+            try
+            {
+                $response = Invoke-WebRequest `
+                    -Uri $url `
+                    -Method GET `
+                    -UseBasicParsing `
+                    -TimeoutSec 30
+
+                $status=$response.StatusCode
+
+                if($status -eq $expected)
+                {
+                    Write-Host "Health Check Passed"
+                    break
+                }
+
+            }
+            catch
+            {
+                Write-Host "Attempt $i failed"
+            }
+
+            Start-Sleep -Seconds $delay
+        }
+
+        if($status -ne $expected)
+        {
+            throw "Health Check Failed"
+        }
+
+        "status=$status" >> $env:GITHUB_OUTPUT
+
+    # Publish summary
+    - name: Health Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Deployment Health Check
+
+        | Item | Value |
+        |------|-------|
+        | URL | ${{ inputs.health-url }} |
+        | Status | ${{ steps.health.outputs.status }} |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

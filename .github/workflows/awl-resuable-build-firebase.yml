@@ -1,0 +1,125 @@
+# ==========================================================================================
+# Workflow : AWL - Build Firebase
+# Purpose  : Build Firebase Hosting & Cloud Functions
+# Runner   : Self-hosted Runner (build)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Build Firebase
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      working-directory:
+        type: string
+        default: "."
+
+      node-version:
+        type: string
+        default: "22"
+
+      artifact-name:
+        required: true
+        type: string
+
+      artifact-path:
+        type: string
+        default: "."
+
+      retention-days:
+        type: number
+        default: 30
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  build:
+
+    runs-on:
+
+      - self-hosted
+      - build
+
+    defaults:
+
+      run:
+
+        shell: pwsh
+
+        working-directory: ${{ inputs.working-directory }}
+
+    outputs:
+
+      artifact-name: ${{ inputs.artifact-name }}
+
+      artifact-path: ${{ inputs.artifact-path }}
+
+    steps:
+
+      # Checkout repository
+      - uses: actions/checkout@v5
+
+      # Setup Firebase
+      - uses: ./.github/actions/awl-setup-firebase
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      # Install root dependencies
+      - name: Install Dependencies
+        run: |
+          npm ci
+
+      # Install Functions dependencies
+      - name: Install Function Dependencies
+        if: hashFiles('functions/package.json') != ''
+        working-directory: ${{ inputs.working-directory }}/functions
+        run: |
+          npm ci
+
+      # Build Cloud Functions
+      - name: Build Functions
+        if: hashFiles('functions/package.json') != ''
+        working-directory: ${{ inputs.working-directory }}/functions
+        run: |
+          npm run build --if-present
+
+      # Validate artifact
+      - name: Validate Artifact
+        run: |
+
+          if (!(Test-Path "${{ inputs.artifact-path }}"))
+          {
+              throw "Artifact not found."
+          }
+
+      # Upload artifact
+      - name: Upload Artifact
+        uses: ./.github/actions/awl-upload-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          artifact-path: ${{ inputs.artifact-path }}
+          retention-days: ${{ inputs.retention-days }}
+
+      # Summary
+      - name: Build Summary
+        shell: pwsh
+        run: |
+
+          @"
+
+          ## Firebase Build Summary
+
+          | Item | Value |
+          |------|-------|
+          | Runner | Build |
+          | Node | ${{ inputs.node-version }} |
+          | Artifact | ${{ inputs.artifact-name }} |
+
+          "@ >> $env:GITHUB_STEP_SUMMARY

@@ -1,0 +1,151 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy AKS
+# Purpose  : Reusable workflow for Azure Kubernetes Service deployment
+# Runner   : Self-hosted Runner (deploy)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy AKS
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        required: true
+        type: string
+
+      resource-group:
+        required: true
+        type: string
+
+      aks-name:
+        required: true
+        type: string
+
+      namespace:
+        required: false
+        default: default
+        type: string
+
+      deployment-type:
+        required: false
+        default: manifest
+        type: string
+
+      manifest-path:
+        required: false
+        default: k8s
+        type: string
+
+      helm-chart-path:
+        required: false
+        default: chart
+        type: string
+
+      release-name:
+        required: false
+        default: app
+        type: string
+
+      values-file:
+        required: false
+        default: values.yaml
+        type: string
+
+      image-name:
+        required: false
+        default: ""
+        type: string
+
+      image-tag:
+        required: false
+        default: ""
+        type: string
+
+      wait-timeout:
+        required: false
+        default: 300s
+        type: string
+
+      enable-health-check:
+        required: false
+        default: false
+        type: boolean
+
+      health-url:
+        required: false
+        default: ""
+        type: string
+
+    secrets:
+
+      AZURE_CLIENT_ID:
+        required: true
+
+      AZURE_TENANT_ID:
+        required: true
+
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+
+permissions:
+
+  id-token: write
+  contents: read
+
+jobs:
+
+  deploy:
+
+    name: Deploy AKS
+
+    runs-on:
+
+      - self-hosted
+      - deploy
+      - linux
+
+    environment:
+
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Azure Login
+      - name: Azure Login
+        uses: ./.github/actions/awl-azure-login
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Deploy AKS
+      - name: Deploy AKS
+        uses: ./.github/actions/awl-deploy-aks
+        with:
+          resource-group: ${{ inputs.resource-group }}
+          aks-name: ${{ inputs.aks-name }}
+          namespace: ${{ inputs.namespace }}
+          deployment-type: ${{ inputs.deployment-type }}
+          manifest-path: ${{ inputs.manifest-path }}
+          helm-chart-path: ${{ inputs.helm-chart-path }}
+          release-name: ${{ inputs.release-name }}
+          values-file: ${{ inputs.values-file }}
+          image-name: ${{ inputs.image-name }}
+          image-tag: ${{ inputs.image-tag }}
+          wait-timeout: ${{ inputs.wait-timeout }}
+
+      # Optional Health Check
+      - name: Health Check
+        if: inputs.enable-health-check && inputs.health-url != ''
+        uses: ./.github/actions/awl-health-check
+        with:
+          health-url: ${{ inputs.health-url }}

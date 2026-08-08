@@ -1,0 +1,246 @@
+# ==========================================================================================
+# Action    : AWL - Deploy IIS
+# Purpose   : Deploy application to IIS Website
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy IIS
+
+description: >
+  Composite action to deploy applications to Microsoft IIS.
+
+author: AWL DevOps Team
+
+inputs:
+
+  site-name:
+    description: IIS Website Name
+    required: true
+
+  app-pool:
+    description: IIS Application Pool
+    required: true
+
+  package-path:
+    description: Build Artifact Path
+    required: true
+
+  physical-path:
+    description: IIS Physical Path
+    required: true
+
+  backup-enabled:
+    description: Backup existing website
+    required: false
+    default: "true"
+
+  backup-path:
+    description: Backup Folder
+    required: false
+    default: 'D:\IISBackups'
+
+  clean-target:
+    description: Clean target folder
+    required: false
+    default: "true"
+
+outputs:
+
+  deployment-status:
+    description: Deployment Status
+    value: ${{ steps.deploy.outputs.status }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Import IIS PowerShell module
+    - name: Import IIS Module
+      shell: pwsh
+      run: |
+
+        Import-Module WebAdministration
+
+    # Validate IIS Website
+    - name: Validate Website
+      shell: pwsh
+      run: |
+
+        if(!(Test-Path IIS:\Sites\${{ inputs.site-name }}))
+        {
+            throw "IIS Website not found."
+        }
+
+    # Validate IIS App Pool
+    - name: Validate App Pool
+      shell: pwsh
+      run: |
+
+        if(!(Test-Path IIS:\AppPools\${{ inputs.app-pool }}))
+        {
+            throw "Application Pool not found."
+        }
+
+    # Validate Package
+    - name: Validate Package
+      shell: pwsh
+      run: |
+
+        if(!(Test-Path "${{ inputs.package-path }}"))
+        {
+            throw "Deployment package not found."
+        }
+
+    # Stop IIS Website
+    - name: Stop Website
+      shell: pwsh
+      run: |
+
+        Stop-WebSite -Name "${{ inputs.site-name }}"
+
+    # Stop IIS App Pool
+    - name: Stop App Pool
+      shell: pwsh
+      run: |
+
+        Stop-WebAppPool "${{ inputs.app-pool }}"
+
+    # Backup Existing Website
+    - name: Backup Website
+      if: inputs.backup-enabled == 'true'
+      shell: pwsh
+      run: |
+
+        $date = Get-Date -Format "yyyyMMdd_HHmmss"
+
+        $backup = Join-Path `
+            "${{ inputs.backup-path }}" `
+            "${{ inputs.site-name }}_$date"
+
+        New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path $backup
+
+        Copy-Item `
+            "${{ inputs.physical-path }}\*" `
+            $backup `
+            -Recurse `
+            -Force
+        # Clean IIS Physical Folder
+    - name: Clean Target Folder
+      if: inputs.clean-target == 'true'
+      shell: pwsh
+      run: |
+
+        Write-Host "Cleaning target folder..."
+
+        Get-ChildItem `
+          -Path "${{ inputs.physical-path }}" `
+          -Force |
+        Remove-Item `
+          -Force `
+          -Recurse
+
+    # Copy Deployment Files
+    - name: Copy Application Files
+      id: deploy
+      shell: pwsh
+      run: |
+
+        Write-Host "Copying application files..."
+
+        Copy-Item `
+          "${{ inputs.package-path }}\*" `
+          "${{ inputs.physical-path }}" `
+          -Recurse `
+          -Force
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Start IIS Application Pool
+    - name: Start App Pool
+      shell: pwsh
+      run: |
+
+        Start-WebAppPool `
+          "${{ inputs.app-pool }}"
+
+    # Start IIS Website
+    - name: Start Website
+      shell: pwsh
+      run: |
+
+        Start-WebSite `
+          -Name "${{ inputs.site-name }}"
+
+    # Wait for IIS Startup
+    - name: Wait for Startup
+      shell: pwsh
+      run: |
+
+        Start-Sleep -Seconds 10
+
+    # Validate Website State
+    - name: Validate Website
+      shell: pwsh
+      run: |
+
+        $state = (Get-Website `
+            -Name "${{ inputs.site-name }}").State
+
+        if($state -ne "Started")
+        {
+            throw "Website is not running."
+        }
+
+        Write-Host "Website State : $state"
+
+    # Validate App Pool State
+    - name: Validate App Pool
+      shell: pwsh
+      run: |
+
+        $state = (Get-WebAppPoolState `
+            "${{ inputs.app-pool }}").Value
+
+        if($state -ne "Started")
+        {
+            throw "Application Pool is not running."
+        }
+
+        Write-Host "App Pool State : $state"
+
+    # Display IIS Information
+    - name: IIS Information
+      shell: pwsh
+      run: |
+
+        Get-Website `
+          -Name "${{ inputs.site-name }}"
+
+        Get-WebAppPoolState `
+          "${{ inputs.app-pool }}"
+
+    # Publish Deployment Summary
+    - name: Deployment Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## IIS Deployment
+
+        | Item | Value |
+        |------|-------|
+        | Website | ${{ inputs.site-name }} |
+        | App Pool | ${{ inputs.app-pool }} |
+        | Physical Path | ${{ inputs.physical-path }} |
+        | Backup | ${{ inputs.backup-enabled }} |
+        | Clean Target | ${{ inputs.clean-target }} |
+        | Status | Success |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

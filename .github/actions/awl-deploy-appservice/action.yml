@@ -1,0 +1,272 @@
+# ==========================================================================================
+# Action    : AWL - Deploy Azure App Service
+# Purpose   : Deploy application package to Azure App Service
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Azure App Service
+
+description: >
+  Composite action to deploy application packages to Azure App Service.
+
+author: AWL DevOps Team
+
+inputs:
+
+  resource-group:
+    description: Azure Resource Group
+    required: true
+
+  app-name:
+    description: Azure App Service Name
+    required: true
+
+  package-path:
+    description: Package file or folder path
+    required: true
+
+  deployment-method:
+    description: zip | war | jar | run-from-package
+    required: false
+    default: zip
+
+  use-slot:
+    description: Deploy to deployment slot
+    required: false
+    default: "false"
+
+  slot-name:
+    description: Deployment Slot Name
+    required: false
+    default: staging
+
+  swap-slot:
+    description: Swap deployment slot
+    required: false
+    default: "false"
+
+  target-slot:
+    description: Swap target slot
+    required: false
+    default: production
+
+  startup-command:
+    description: Linux startup command
+    required: false
+    default: ""
+
+outputs:
+
+  deployment-status:
+    description: Deployment Result
+    value: ${{ steps.deploy.outputs.status }}
+
+  deployment-method:
+    description: Deployment Method Used
+    value: ${{ inputs.deployment-method }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Validate deployment inputs
+    - name: Validate Inputs
+      shell: pwsh
+      run: |
+
+        Write-Host "====================================="
+        Write-Host "Azure App Service Deployment"
+        Write-Host "====================================="
+
+        if(!(Test-Path "${{ inputs.package-path }}"))
+        {
+            throw "Package path not found."
+        }
+
+        Write-Host "Package : ${{ inputs.package-path }}"
+        Write-Host "App     : ${{ inputs.app-name }}"
+        Write-Host "RG      : ${{ inputs.resource-group }}"
+
+    # Validate Azure App Service
+    - name: Validate App Service
+      shell: pwsh
+      run: |
+
+        if("${{ inputs.use-slot }}" -eq "true")
+        {
+            az webapp show `
+              --resource-group "${{ inputs.resource-group }}" `
+              --name "${{ inputs.app-name }}" `
+              --slot "${{ inputs.slot-name }}" `
+              --output table
+        }
+        else
+        {
+            az webapp show `
+              --resource-group "${{ inputs.resource-group }}" `
+              --name "${{ inputs.app-name }}" `
+              --output table
+        }
+
+    # Configure Linux Startup Command
+    - name: Configure Startup Command
+      if: inputs.startup-command != ''
+      shell: pwsh
+      run: |
+
+        az webapp config set `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --startup-file "${{ inputs.startup-command }}"
+
+    # Display deployment details
+    - name: Deployment Details
+      shell: pwsh
+      run: |
+
+        Write-Host ""
+        Write-Host "Deployment Method : ${{ inputs.deployment-method }}"
+        Write-Host "Deployment Slot   : ${{ inputs.use-slot }}"
+
+        # Deploy ZIP Package
+    - name: Deploy ZIP Package
+      id: deploy
+      if: inputs.deployment-method == 'zip' && inputs.use-slot == 'false'
+      shell: pwsh
+      run: |
+
+        Write-Host "Deploying ZIP package..."
+
+        az webapp deploy `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --src-path "${{ inputs.package-path }}" `
+          --type zip
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Deploy ZIP Package to Slot
+    - name: Deploy ZIP Package (Slot)
+      id: deploy-slot
+      if: inputs.deployment-method == 'zip' && inputs.use-slot == 'true'
+      shell: pwsh
+      run: |
+
+        Write-Host "Deploying ZIP package to slot..."
+
+        az webapp deploy `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --slot "${{ inputs.slot-name }}" `
+          --src-path "${{ inputs.package-path }}" `
+          --type zip
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Deploy WAR Package
+    - name: Deploy WAR Package
+      id: deploy-war
+      if: inputs.deployment-method == 'war'
+      shell: pwsh
+      run: |
+
+        Write-Host "Deploying WAR package..."
+
+        az webapp deploy `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --src-path "${{ inputs.package-path }}" `
+          --type war
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Deploy JAR Package
+    - name: Deploy JAR Package
+      id: deploy-jar
+      if: inputs.deployment-method == 'jar'
+      shell: pwsh
+      run: |
+
+        Write-Host "Deploying JAR package..."
+
+        az webapp deploy `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --src-path "${{ inputs.package-path }}" `
+          --type jar
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Enable WEBSITE_RUN_FROM_PACKAGE
+    - name: Enable Run From Package
+      if: inputs.deployment-method == 'run-from-package'
+      shell: pwsh
+      run: |
+
+        az webapp config appsettings set `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --settings WEBSITE_RUN_FROM_PACKAGE=1
+
+    # Deploy Run From Package
+    - name: Deploy Run From Package
+      id: deploy-package
+      if: inputs.deployment-method == 'run-from-package'
+      shell: pwsh
+      run: |
+
+        Write-Host "Deploying Run From Package..."
+
+        az webapp deploy `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --src-path "${{ inputs.package-path }}" `
+          --type zip
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Swap Deployment Slot
+    - name: Swap Slot
+      if: inputs.swap-slot == 'true'
+      shell: pwsh
+      run: |
+
+        Write-Host "Swapping deployment slot..."
+
+        az webapp deployment slot swap `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --slot "${{ inputs.slot-name }}" `
+          --target-slot "${{ inputs.target-slot }}"
+
+    # Verify Deployment
+    - name: Verify Deployment
+      shell: pwsh
+      run: |
+
+        az webapp show `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.app-name }}" `
+          --output table
+
+    # Deployment Summary
+    - name: Deployment Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Azure App Service Deployment
+
+        | Item | Value |
+        |------|-------|
+        | Application | ${{ inputs.app-name }} |
+        | Resource Group | ${{ inputs.resource-group }} |
+        | Method | ${{ inputs.deployment-method }} |
+        | Slot | ${{ inputs.slot-name }} |
+        | Status | Success |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

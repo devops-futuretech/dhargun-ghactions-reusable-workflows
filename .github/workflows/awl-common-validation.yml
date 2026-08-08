@@ -1,0 +1,153 @@
+# ============================================================
+# Workflow Name : AWLABL - Common Validation
+# Purpose       : Common validation workflow used before
+#                 Build / Deploy / Terraform workflows
+#
+# Version       : 1.0
+#
+# Maintainer    : AWLABL DevOps Team
+#
+# ============================================================
+
+name: AWLABL - Common Validation
+
+# ------------------------------------------------------------
+# Reusable Workflow Trigger
+# ------------------------------------------------------------
+on:
+
+  workflow_call:
+
+    inputs:
+
+      runner-label:
+        description: Self Hosted Runner Label
+        required: false
+        default: awl-runner
+        type: string
+
+      environment:
+        description: GitHub Environment
+        required: true
+        type: string
+
+      allowed-branches:
+        description: Allowed Branch Regex
+        required: false
+        type: string
+        default: "^(feature\\/.*|develop|uat|release\\/.*|hotfix\\/.*|main)$"
+
+permissions:
+  contents: read
+
+jobs:
+
+  validation:
+
+    name: Common Validation
+
+    runs-on:
+
+      - self-hosted
+      - ${{ inputs.runner-label }}
+
+    environment: ${{ inputs.environment }}
+
+    steps:
+
+    # --------------------------------------------------------
+    # Checkout Repository
+    # --------------------------------------------------------
+    - name: Checkout Repository
+
+      uses: actions/checkout@v4
+
+    # --------------------------------------------------------
+    # Display Context Information
+    # --------------------------------------------------------
+    - name: Display Workflow Context
+
+      shell: pwsh
+
+      run: |
+
+        Write-Host ""
+        Write-Host "========== Workflow Context =========="
+
+        Write-Host "Repository  : $env:GITHUB_REPOSITORY"
+        Write-Host "Branch      : $env:GITHUB_REF_NAME"
+        Write-Host "Commit      : $env:GITHUB_SHA"
+        Write-Host "Runner      : $env:RUNNER_NAME"
+        Write-Host "Actor       : $env:GITHUB_ACTOR"
+        Write-Host "Event       : $env:GITHUB_EVENT_NAME"
+        Write-Host "Environment : ${{ inputs.environment }}"
+
+    # --------------------------------------------------------
+    # Branch Validation
+    # --------------------------------------------------------
+    - name: Validate Branch
+
+      shell: bash
+
+      run: |
+
+        BRANCH="${GITHUB_REF_NAME}"
+
+        echo "Checking branch : $BRANCH"
+
+        if [[ "$BRANCH" =~ ${{ inputs.allowed-branches }} ]]
+        then
+            echo "Branch validation successful."
+        else
+            echo "Invalid branch."
+            exit 1
+        fi
+
+    # --------------------------------------------------------
+    # Validate GitHub Variables
+    # --------------------------------------------------------
+    - name: Validate Variables
+
+      shell: pwsh
+
+      run: |
+
+        if ("${{ vars.BUILD_CONFIGURATION }}" -eq "")
+        {
+            throw "BUILD_CONFIGURATION variable not configured."
+        }
+
+        if ("${{ vars.DOTNET_VERSION }}" -eq "")
+        {
+            Write-Host "DOTNET_VERSION not configured."
+        }
+
+    # --------------------------------------------------------
+    # Runner Information
+    # --------------------------------------------------------
+    - name: Display Runner Information
+
+      shell: pwsh
+
+      run: |
+
+        Write-Host ""
+        Write-Host "========== Runner =========="
+
+        Write-Host "Runner Name : $env:RUNNER_NAME"
+        Write-Host "OS          : $env:RUNNER_OS"
+        Write-Host "Architecture: $env:RUNNER_ARCH"
+
+    # --------------------------------------------------------
+    # Validation Completed
+    # --------------------------------------------------------
+    - name: Validation Completed
+
+      shell: pwsh
+
+      run: |
+
+        Write-Host ""
+        Write-Host "======================================"
+        Write-Host "All validation completed successfully."
+        Write-Host "======================================"

@@ -1,0 +1,225 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy Google Cloud Run   [PROPOSED — NOT YET IN THE PLATFORM REPO]
+# Purpose  : Reusable workflow for deploying containerized apps to Google Cloud Run
+# Status   : DRAFT for platform-team review. Needed by: Chanakya (backend), Genius Kitchen
+#            (backend, migrating from GitLab where Cloud Run deploys already exist).
+# Assumes  : A Dockerfile exists in the build context, OR the build job has already produced
+#            a container image pushed to Artifact Registry. This draft builds the image
+#            from the downloaded build artifact for simplicity — adjust to match how
+#            Chanakya / Genius Kitchen currently containerize on GitLab.
+# Auth     : Workload Identity Federation (WIF), following the same "no long-lived keys"
+#            principle as the existing awl-azure-login / OIDC pattern for Azure.
+# ==========================================================================================
+
+name: AWL - Deploy Google Cloud Run
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        description: GitHub Environment
+        required: true
+        type: string
+
+      artifact-name:
+        description: Build Artifact Name
+        required: true
+        type: string
+
+      package-path:
+        description: Artifact Download Path
+        required: false
+        default: artifact
+        type: string
+
+      service-name:
+        description: Cloud Run Service Name
+        required: true
+        type: string
+
+      region:
+        description: GCP Region
+        required: true
+        type: string
+
+      project-id:
+        description: GCP Project ID (recommend one project per environment)
+        required: true
+        type: string
+
+      image-repository:
+        description: Artifact Registry repository (e.g. REGION-docker.pkg.dev/PROJECT/REPO)
+        required: true
+        type: string
+
+      dockerfile-path:
+        description: Path to Dockerfile
+        required: false
+        default: Dockerfile
+        type: string
+
+      allow-unauthenticated:
+        description: Allow public/unauthenticated invocation
+        required: false
+        default: false
+        type: boolean
+
+      min-instances:
+        description: Minimum Cloud Run instances
+        required: false
+        default: 0
+        type: number
+
+      max-instances:
+        description: Maximum Cloud Run instances
+        required: false
+        default: 10
+        type: number
+
+      cpu:
+        description: CPU allocation
+        required: false
+        default: "1"
+        type: string
+
+      memory:
+        description: Memory allocation
+        required: false
+        default: "512Mi"
+        type: string
+
+      env-vars:
+        description: Comma-separated KEY=VALUE runtime env vars (secrets should NOT go here)
+        required: false
+        default: ""
+        type: string
+
+      enable-health-check:
+        description: Execute Health Check
+        required: false
+        default: false
+        type: boolean
+
+      health-url:
+        description: Health Check URL
+        required: false
+        default: ""
+        type: string
+
+    secrets:
+
+      GCP_WORKLOAD_IDENTITY_PROVIDER:
+        required: true
+
+      GCP_SERVICE_ACCOUNT:
+        required: true
+
+permissions:
+
+  id-token: write
+  contents: read
+
+jobs:
+
+  deploy:
+
+    name: Deploy Cloud Run
+
+    runs-on:
+      - self-hosted
+      - deploy
+
+    environment:
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Download Build Artifact
+      - name: Download Artifact
+        uses: ./.github/actions/awl-download-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          download-path: ${{ inputs.package-path }}
+
+      # Authenticate to GCP via Workload Identity Federation (no JSON key secrets)
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev --quiet
+
+      # Build & push image
+      - name: Build Container Image
+        run: |
+          IMAGE="${{ inputs.image-repository }}/${{ inputs.service-name }}:${{ github.sha }}"
+          docker build -f "${{ inputs.dockerfile-path }}" -t "$IMAGE" "${{ inputs.package-path }}"
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      # Deploy to Cloud Run
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ inputs.service-name }}
+          region: ${{ inputs.region }}
+          project_id: ${{ inputs.project-id }}
+          image: ${{ env.IMAGE }}
+          flags: >-
+            --min-instances=${{ inputs.min-instances }}
+            --max-instances=${{ inputs.max-instances }}
+            --cpu=${{ inputs.cpu }}
+            --memory=${{ inputs.memory }}
+            ${{ inputs.allow-unauthenticated && '--allow-unauthenticated' || '--no-allow-unauthenticated' }}
+          env_vars: ${{ inputs.env-vars }}
+
+      # Validate deployment
+      - name: Health Check
+        if: inputs.enable-health-check && inputs.health-url != ''
+        uses: ./.github/actions/awl-health-check
+        with:
+          health-url: ${{ inputs.health-url }}
+
+      # Deployment summary
+      - name: Deployment Summary
+        shell: pwsh
+        run: |
+
+          @"
+
+          ## Cloud Run Deployment Summary
+
+          | Item | Value |
+          |------|-------|
+          | Service | ${{ inputs.service-name }} |
+          | Region | ${{ inputs.region }} |
+          | Project | ${{ inputs.project-id }} |
+          | Environment | ${{ inputs.environment }} |
+          | Image | ${{ env.IMAGE }} |
+
+          "@ >> $env:GITHUB_STEP_SUMMARY
+
+# ------------------------------------------------------------------------------------------
+# REVIEW CHECKLIST before merging into the platform repo:
+# 1. Confirm image build strategy — does Genius Kitchen's GitLab pipeline already produce an
+#    image via a separate build stage? If yes, this workflow should accept a pre-built image
+#    reference as an input instead of building it here, to stay symmetric with the other
+#    "build -> upload artifact -> deploy -> download artifact" pattern used elsewhere.
+# 2. GCP Workload Identity Federation must be provisioned per environment/project (parallel
+#    to the Azure OIDC setup in docs/07-authentication-oidc.md) before this can run.
+# 3. Add a companion composite action (./.github/actions/awl-deploy-cloudrun) if the platform
+#    team prefers to keep marketplace-action usage isolated to the actions/ layer, consistent
+#    with how awl-deploy-appservice wraps its logic in a composite action.
+# ------------------------------------------------------------------------------------------

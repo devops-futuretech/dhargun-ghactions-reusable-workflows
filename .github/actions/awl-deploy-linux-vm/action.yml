@@ -1,0 +1,242 @@
+# ==========================================================================================
+# Action    : AWL - Deploy Linux VM
+# Purpose   : Deploy application package to Linux Virtual Machine
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Linux VM
+
+description: >
+  Composite action to deploy application package to Linux Virtual Machine.
+
+author: AWL DevOps Team
+
+inputs:
+
+  host:
+    description: Linux VM Host
+    required: true
+
+  username:
+    description: SSH Username
+    required: true
+
+  ssh-private-key:
+    description: SSH Private Key
+    required: true
+
+  package-path:
+    description: Deployment Package
+    required: true
+
+  target-path:
+    description: Target Deployment Folder
+    required: true
+
+  backup-enabled:
+    description: Backup Existing Deployment
+    required: false
+    default: "true"
+
+  backup-path:
+    description: Backup Folder
+    required: false
+    default: "/opt/backup"
+
+  clean-target:
+    description: Clean Deployment Folder
+    required: false
+    default: "true"
+
+  extract-package:
+    description: Extract ZIP Package
+    required: false
+    default: "true"
+
+  service-name:
+    description: Linux Service Name
+    required: false
+    default: ""
+
+  post-deploy-command:
+    description: Custom Post Deployment Command
+    required: false
+    default: ""
+
+outputs:
+
+  deployment-status:
+    description: Deployment Status
+    value: ${{ steps.deploy.outputs.status }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Configure SSH Key
+    - name: Configure SSH
+      shell: bash
+      run: |
+
+        mkdir -p ~/.ssh
+
+        echo "${{ inputs.ssh-private-key }}" > ~/.ssh/id_rsa
+
+        chmod 600 ~/.ssh/id_rsa
+
+        ssh-keyscan -H ${{ inputs.host }} >> ~/.ssh/known_hosts
+
+    # Validate Package
+    - name: Validate Package
+      shell: bash
+      run: |
+
+        if [ ! -e "${{ inputs.package-path }}" ]; then
+          echo "Deployment package not found."
+          exit 1
+        fi
+
+    # Backup Existing Deployment
+    - name: Backup Existing Deployment
+      if: inputs.backup-enabled == 'true'
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        mkdir -p "${{ inputs.backup-path }}"
+
+        if [ -d "${{ inputs.target-path }}" ]; then
+
+          cp -R "${{ inputs.target-path }}" \
+                "${{ inputs.backup-path }}/backup_$(date +%Y%m%d_%H%M%S)"
+
+        fi
+
+        EOF
+
+    # Clean Target Folder
+    - name: Clean Target Folder
+      if: inputs.clean-target == 'true'
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} \
+        "rm -rf ${{ inputs.target-path }}/*"
+        # Copy Deployment Package
+    - name: Copy Package
+      shell: bash
+      run: |
+
+        echo "Copying deployment package..."
+
+        scp -r \
+          "${{ inputs.package-path }}" \
+          "${{ inputs.username }}@${{ inputs.host }}:${{ inputs.target-path }}"
+
+    # Extract Deployment Package
+    - name: Extract Package
+      if: inputs.extract-package == 'true'
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        cd "${{ inputs.target-path }}"
+
+        FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+
+        if [ -n "$FILE" ]; then
+
+          unzip -o "$FILE"
+
+          rm -f "$FILE"
+
+        fi
+
+        EOF
+
+    # Execute Post Deployment Command
+    - name: Post Deployment Command
+      if: inputs.post-deploy-command != ''
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} \
+        "${{ inputs.post-deploy-command }}"
+
+    # Restart Linux Service
+    - name: Restart Service
+      id: deploy
+      if: inputs.service-name != ''
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        sudo systemctl daemon-reload
+
+        sudo systemctl restart "${{ inputs.service-name }}"
+
+        sudo systemctl status "${{ inputs.service-name }}" --no-pager
+
+        EOF
+
+        echo "status=Success" >> "$GITHUB_OUTPUT"
+
+    # Validate Service
+    - name: Validate Service
+      if: inputs.service-name != ''
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        STATUS=$(systemctl is-active "${{ inputs.service-name }}")
+
+        if [ "$STATUS" != "active" ]; then
+
+          echo "Service is not running."
+
+          exit 1
+
+        fi
+
+        echo "Service Status : $STATUS"
+
+        EOF
+
+    # Display Deployment Folder
+    - name: Verify Deployment
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        ls -la "${{ inputs.target-path }}"
+
+        EOF
+
+    # Publish Deployment Summary
+    - name: Deployment Summary
+      shell: bash
+      run: |
+
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+
+        ## Linux VM Deployment
+
+        | Item | Value |
+        |------|-------|
+        | Host | ${{ inputs.host }} |
+        | Target Path | ${{ inputs.target-path }} |
+        | Backup | ${{ inputs.backup-enabled }} |
+        | Clean Target | ${{ inputs.clean-target }} |
+        | Extract Package | ${{ inputs.extract-package }} |
+        | Service | ${{ inputs.service-name }} |
+        | Status | Success |
+
+        EOF    

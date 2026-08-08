@@ -1,0 +1,65 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy Firebase Functions
+# Purpose  : Deploy Firebase Cloud Functions
+# Runner   : Self-hosted Runner (deploy)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Firebase Functions
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        required: true
+        type: string
+
+      project-id:
+        required: true
+        type: string
+
+      functions-target:
+        required: false
+        default: ""
+        type: string
+
+    secrets:
+
+      FIREBASE_TOKEN:
+        required: true
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  deploy:
+
+    runs-on:
+
+      - self-hosted
+      - deploy
+
+    environment:
+
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout Repository
+      - uses: actions/checkout@v5
+
+      # Setup Firebase CLI
+      - uses: ./.github/actions/awl-setup-firebase
+
+      # Deploy Firebase Functions
+      - uses: ./.github/actions/awl-deploy-firebase-functions
+        with:
+          project-id: ${{ inputs.project-id }}
+          firebase-token: ${{ secrets.FIREBASE_TOKEN }}
+          functions-target: ${{ inputs.functions-target }}

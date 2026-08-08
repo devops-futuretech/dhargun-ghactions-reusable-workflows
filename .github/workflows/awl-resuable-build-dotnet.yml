@@ -1,0 +1,171 @@
+# ==========================================================================================
+# Workflow : AWL - Build .NET
+# Purpose  : Reusable workflow to build .NET applications
+# Runner   : Self-hosted Runner (build)
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Build .NET
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      project-path:
+        description: Project or Solution path
+        required: true
+        type: string
+
+      dotnet-version:
+        description: .NET SDK Version
+        required: false
+        default: "8.0.x"
+        type: string
+
+      configuration:
+        description: Build Configuration
+        required: false
+        default: Release
+        type: string
+
+      publish-folder:
+        description: Publish Folder
+        required: false
+        default: publish
+        type: string
+
+      run-tests:
+        description: Execute Tests
+        required: false
+        default: false
+        type: boolean
+
+      test-project:
+        description: Test Project
+        required: false
+        default: ""
+        type: string
+
+      artifact-name:
+        description: Artifact Name
+        required: true
+        type: string
+
+      retention-days:
+        description: Artifact Retention
+        required: false
+        default: 30
+        type: number
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  build:
+
+    name: Build .NET
+
+    runs-on:
+
+      - self-hosted
+
+      - build
+
+    defaults:
+
+      run:
+
+        shell: pwsh
+
+    outputs:
+
+      artifact-name: ${{ inputs.artifact-name }}
+
+      artifact-path: ${{ inputs.publish-folder }}
+
+    steps:
+
+      # Checkout source code
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Setup .NET SDK
+      - name: Setup .NET
+        uses: ./.github/actions/awl-setup-dotnet
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      # Restore NuGet packages
+      - name: Restore Packages
+        run: |
+          dotnet restore "${{ inputs.project-path }}"
+
+      # Build project
+      - name: Build Project
+        run: |
+          dotnet build "${{ inputs.project-path }}" `
+          --configuration "${{ inputs.configuration }}" `
+          --no-restore
+
+      # Execute tests
+      - name: Run Tests
+        if: inputs.run-tests
+        run: |
+          dotnet test "${{ inputs.test-project }}" `
+          --configuration "${{ inputs.configuration }}" `
+          --no-build
+
+      # Publish application
+      - name: Publish Application
+        run: |
+          dotnet publish "${{ inputs.project-path }}" `
+          --configuration "${{ inputs.configuration }}" `
+          --output "${{ inputs.publish-folder }}" `
+          --no-build
+
+      # Validate publish folder
+      - name: Validate Publish Folder
+        run: |
+
+          if(!(Test-Path "${{ inputs.publish-folder }}"))
+          {
+              throw "Publish folder not found."
+          }
+
+      # Upload artifact
+      - name: Upload Artifact
+        uses: ./.github/actions/awl-upload-artifact
+        with:
+
+          artifact-name: ${{ inputs.artifact-name }}
+
+          artifact-path: ${{ inputs.publish-folder }}
+
+          retention-days: ${{ inputs.retention-days }}
+
+      # Publish workflow summary
+      - name: Build Summary
+        shell: pwsh
+        run: |
+
+          @"
+
+          ## .NET Build Summary
+
+          | Item | Value |
+          |------|-------|
+          | Runner | Build |
+          | SDK | ${{ inputs.dotnet-version }} |
+          | Configuration | ${{ inputs.configuration }} |
+          | Project | ${{ inputs.project-path }} |
+          | Publish Folder | ${{ inputs.publish-folder }} |
+          | Artifact | ${{ inputs.artifact-name }} |
+          | Repository | ${{ github.repository }} |
+          | Branch | ${{ github.ref_name }} |
+          | Commit | ${{ github.sha }} |
+
+          "@ >> $env:GITHUB_STEP_SUMMARY

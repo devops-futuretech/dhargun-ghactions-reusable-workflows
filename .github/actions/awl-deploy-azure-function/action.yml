@@ -1,0 +1,155 @@
+# ==========================================================================================
+# Action    : AWL - Deploy Azure Function
+# Purpose   : Deploy application package to Azure Function App
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Azure Function
+
+description: >
+  Composite action to deploy application packages to Azure Function App.
+
+author: AWL DevOps Team
+
+inputs:
+
+  resource-group:
+    description: Azure Resource Group
+    required: true
+
+  function-app-name:
+    description: Azure Function App Name
+    required: true
+
+  package-path:
+    description: Package Path
+    required: true
+
+  deployment-method:
+    description: zip | run-from-package
+    required: false
+    default: zip
+
+  startup-command:
+    description: Linux Startup Command
+    required: false
+    default: ""
+
+outputs:
+
+  deployment-status:
+    description: Deployment Result
+    value: ${{ steps.deploy.outputs.status }}
+
+  deployment-method:
+    description: Deployment Method
+    value: ${{ inputs.deployment-method }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Validate package
+    - name: Validate Package
+      shell: pwsh
+      run: |
+
+        if(!(Test-Path "${{ inputs.package-path }}"))
+        {
+            throw "Deployment package not found."
+        }
+
+    # Validate Function App
+    - name: Validate Function App
+      shell: pwsh
+      run: |
+
+        az functionapp show `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.function-app-name }}" `
+          --output table
+
+    # Configure Startup Command
+    - name: Configure Startup Command
+      if: inputs.startup-command != ''
+      shell: pwsh
+      run: |
+
+        az functionapp config set `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.function-app-name }}" `
+          --linux-fx-version "${{ inputs.startup-command }}"
+
+        # Deploy ZIP Package
+    - name: Deploy ZIP Package
+      id: deploy
+      if: inputs.deployment-method == 'zip'
+      shell: pwsh
+      run: |
+
+        Write-Host "Deploying ZIP package..."
+
+        az functionapp deployment source config-zip `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.function-app-name }}" `
+          --src "${{ inputs.package-path }}"
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Enable Run From Package
+    - name: Enable Run From Package
+      if: inputs.deployment-method == 'run-from-package'
+      shell: pwsh
+      run: |
+
+        az functionapp config appsettings set `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.function-app-name }}" `
+          --settings WEBSITE_RUN_FROM_PACKAGE=1
+
+    # Deploy Run From Package
+    - name: Deploy Run From Package
+      id: deploy-package
+      if: inputs.deployment-method == 'run-from-package'
+      shell: pwsh
+      run: |
+
+        Write-Host "Deploying Run From Package..."
+
+        az functionapp deployment source config-zip `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.function-app-name }}" `
+          --src "${{ inputs.package-path }}"
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Verify Function App
+    - name: Verify Deployment
+      shell: pwsh
+      run: |
+
+        az functionapp show `
+          --resource-group "${{ inputs.resource-group }}" `
+          --name "${{ inputs.function-app-name }}" `
+          --output table
+
+    # Publish deployment summary
+    - name: Deployment Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Azure Function Deployment
+
+        | Item | Value |
+        |------|-------|
+        | Function App | ${{ inputs.function-app-name }} |
+        | Resource Group | ${{ inputs.resource-group }} |
+        | Deployment | ${{ inputs.deployment-method }} |
+        | Status | Success |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

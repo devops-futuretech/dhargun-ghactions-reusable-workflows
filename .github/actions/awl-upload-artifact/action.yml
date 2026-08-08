@@ -1,0 +1,80 @@
+name: AWL - Upload Artifact
+
+description: >
+  Composite action to upload build artifacts for reusable workflows.
+
+author: AWL DevOps Team
+
+inputs:
+
+  artifact-name:
+    description: Name of the artifact.
+    required: true
+
+  artifact-path:
+    description: Path of artifact or folder.
+    required: true
+
+  retention-days:
+    description: Artifact retention period.
+    required: false
+    default: "30"
+
+  compression-level:
+    description: Compression level (0-9).
+    required: false
+    default: "6"
+
+  overwrite:
+    description: Replace artifact if already exists.
+    required: false
+    default: "true"
+
+outputs:
+
+  artifact-name:
+    description: Uploaded artifact name.
+    value: ${{ inputs.artifact-name }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Validate artifact exists before upload.
+    - name: Validate Artifact
+      shell: pwsh
+      run: |
+
+        if (!(Test-Path "${{ inputs.artifact-path }}"))
+        {
+            throw "Artifact path not found : ${{ inputs.artifact-path }}"
+        }
+
+    # Upload artifact to GitHub Actions.
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.artifact-path }}
+        retention-days: ${{ inputs.retention-days }}
+        compression-level: ${{ inputs.compression-level }}
+        overwrite: ${{ inputs.overwrite }}
+
+    # Display upload summary.
+    - name: Upload Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Artifact Uploaded
+
+        | Item | Value |
+        |------|-------|
+        | Name | ${{ inputs.artifact-name }} |
+        | Path | ${{ inputs.artifact-path }} |
+        | Retention | ${{ inputs.retention-days }} Days |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

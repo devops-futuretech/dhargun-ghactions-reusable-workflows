@@ -1,0 +1,67 @@
+name: AWL - Setup .NET
+
+description: >
+  Composite action to install and configure .NET SDK for reusable workflows.
+
+author: AWL DevOps Team
+
+inputs:
+
+  dotnet-version:
+    description: .NET SDK version
+    required: false
+    default: "8.0.x"
+
+  cache:
+    description: Enable NuGet package cache
+    required: false
+    default: "true"
+
+outputs:
+
+  dotnet-version:
+    description: Installed .NET SDK version
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Install requested .NET SDK.
+    - name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+        cache: ${{ inputs.cache }}
+
+    # Display installed SDK information.
+    - name: Show .NET Version
+      shell: pwsh
+      run: |
+        dotnet --info
+
+    # Export installed SDK version.
+    - name: Export Version
+      id: version
+      shell: pwsh
+      run: |
+        $sdk = dotnet --version
+        "version=$sdk" >> $env:GITHUB_OUTPUT
+
+    # Publish step summary.
+    - name: Setup Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## .NET Runtime
+
+        | Item | Value |
+        |------|-------|
+        | SDK | ${{ inputs.dotnet-version }} |
+        | Cache | ${{ inputs.cache }} |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

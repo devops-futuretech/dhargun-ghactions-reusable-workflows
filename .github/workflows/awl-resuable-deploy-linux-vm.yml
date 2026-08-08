@@ -1,0 +1,155 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy Linux VM
+# Purpose  : Reusable workflow to deploy applications to Linux VM
+# Runner   : Self-hosted Runner (deploy)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Linux VM
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        description: GitHub Environment
+        required: true
+        type: string
+
+      artifact-name:
+        description: Build Artifact Name
+        required: true
+        type: string
+
+      package-path:
+        description: Artifact Download Path
+        required: false
+        default: artifact
+        type: string
+
+      host:
+        description: Linux VM Host
+        required: true
+        type: string
+
+      username:
+        description: SSH Username
+        required: true
+        type: string
+
+      target-path:
+        description: Deployment Folder
+        required: true
+        type: string
+
+      backup-enabled:
+        description: Backup Existing Deployment
+        required: false
+        default: true
+        type: boolean
+
+      backup-path:
+        description: Backup Folder
+        required: false
+        default: /opt/backup
+        type: string
+
+      clean-target:
+        description: Clean Target Folder
+        required: false
+        default: true
+        type: boolean
+
+      extract-package:
+        description: Extract ZIP
+        required: false
+        default: true
+        type: boolean
+
+      service-name:
+        description: Linux Service
+        required: false
+        default: ""
+        type: string
+
+      post-deploy-command:
+        description: Custom Command
+        required: false
+        default: ""
+        type: string
+
+      enable-health-check:
+        description: Execute Health Check
+        required: false
+        default: false
+        type: boolean
+
+      health-url:
+        description: Health Check URL
+        required: false
+        default: ""
+        type: string
+
+    secrets:
+
+      VM_SSH_KEY:
+        required: true
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  deploy:
+
+    name: Deploy Linux VM
+
+    runs-on:
+
+      - self-hosted
+      - deploy
+      - linux
+
+    environment:
+
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout source
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Download deployment artifact
+      - name: Download Artifact
+        uses: ./.github/actions/awl-download-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          download-path: ${{ inputs.package-path }}
+
+      # Deploy application
+      - name: Deploy Linux VM
+        uses: ./.github/actions/awl-deploy-linux-vm
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+          package-path: ${{ inputs.package-path }}
+          target-path: ${{ inputs.target-path }}
+          backup-enabled: ${{ inputs.backup-enabled }}
+          backup-path: ${{ inputs.backup-path }}
+          clean-target: ${{ inputs.clean-target }}
+          extract-package: ${{ inputs.extract-package }}
+          service-name: ${{ inputs.service-name }}
+          post-deploy-command: ${{ inputs.post-deploy-command }}
+
+      # Validate deployment
+      - name: Health Check
+        if: inputs.enable-health-check && inputs.health-url != ''
+        uses: ./.github/actions/awl-health-check
+        with:
+          health-url: ${{ inputs.health-url }}

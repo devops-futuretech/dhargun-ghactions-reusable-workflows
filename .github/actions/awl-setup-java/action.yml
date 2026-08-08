@@ -1,0 +1,84 @@
+# ==========================================================================================
+# Action    : AWL - Setup Java
+# Purpose   : Install and configure Java JDK for reusable workflows
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Setup Java
+
+description: >
+  Composite action to install Java and configure Gradle/Maven cache.
+
+author: AWL DevOps Team
+
+inputs:
+
+  java-version:
+    description: Java JDK Version
+    required: false
+    default: "21"
+
+  distribution:
+    description: JDK Distribution
+    required: false
+    default: "temurin"
+
+  cache:
+    description: gradle | maven | none
+    required: false
+    default: "gradle"
+
+outputs:
+
+  java-version:
+    description: Installed Java Version
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Install Java Runtime
+    - name: Setup Java
+      uses: actions/setup-java@v5
+      with:
+        distribution: ${{ inputs.distribution }}
+        java-version: ${{ inputs.java-version }}
+        cache: ${{ inputs.cache }}
+
+    # Display installed Java version
+    - name: Show Java Version
+      shell: pwsh
+      run: |
+
+        java -version
+
+    # Export installed Java version
+    - name: Export Java Version
+      id: version
+      shell: pwsh
+      run: |
+
+        $version = java -version 2>&1 | Select-Object -First 1
+
+        "version=$version" >> $env:GITHUB_OUTPUT
+
+    # Publish setup summary
+    - name: Setup Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Java Runtime
+
+        | Item | Value |
+        |------|-------|
+        | JDK | ${{ inputs.java-version }} |
+        | Distribution | ${{ inputs.distribution }} |
+        | Cache | ${{ inputs.cache }} |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

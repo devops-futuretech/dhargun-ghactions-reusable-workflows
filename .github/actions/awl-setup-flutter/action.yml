@@ -1,0 +1,98 @@
+# ==========================================================================================
+# Action    : AWL - Setup Flutter
+# Purpose   : Install and configure Flutter SDK for reusable workflows
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Setup Flutter
+
+description: >
+  Composite action to install Flutter SDK and configure Android build environment.
+
+author: AWL DevOps Team
+
+inputs:
+
+  flutter-version:
+    description: Flutter SDK Version
+    required: false
+    default: "stable"
+
+  java-version:
+    description: Java Version
+    required: false
+    default: "21"
+
+  distribution:
+    description: Java Distribution
+    required: false
+    default: "temurin"
+
+  cache:
+    description: Enable Pub Cache
+    required: false
+    default: "true"
+
+outputs:
+
+  flutter-version:
+    description: Installed Flutter Version
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Install Java
+    - name: Setup Java
+      uses: actions/setup-java@v5
+      with:
+        distribution: ${{ inputs.distribution }}
+        java-version: ${{ inputs.java-version }}
+        cache: gradle
+
+    # Install Flutter SDK
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        cache: ${{ inputs.cache }}
+
+    # Install Flutter packages
+    - name: Flutter Pub Get
+      shell: pwsh
+      run: |
+        flutter pub get
+
+    # Validate Flutter installation
+    - name: Flutter Doctor
+      shell: pwsh
+      run: |
+        flutter doctor -v
+
+    # Export Flutter version
+    - name: Export Version
+      id: version
+      shell: pwsh
+      run: |
+        $version = flutter --version | Select-Object -First 1
+        "version=$version" >> $env:GITHUB_OUTPUT
+
+    # Publish setup summary
+    - name: Setup Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Flutter Runtime
+
+        | Item | Value |
+        |------|-------|
+        | Flutter | ${{ inputs.flutter-version }} |
+        | Java | ${{ inputs.java-version }} |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

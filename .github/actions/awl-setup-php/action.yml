@@ -1,0 +1,88 @@
+# ==========================================================================================
+# Action    : AWL - Setup PHP
+# Purpose   : Install and configure PHP runtime for reusable workflows
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Setup PHP
+
+description: >
+  Composite action to install PHP runtime with Composer support.
+
+author: AWL DevOps Team
+
+inputs:
+
+  php-version:
+    description: PHP Version
+    required: false
+    default: "8.3"
+
+  extensions:
+    description: PHP Extensions
+    required: false
+    default: mbstring,intl,pdo,pdo_mysql,openssl,json,xml,curl,zip
+
+  coverage:
+    description: Coverage Driver
+    required: false
+    default: none
+
+  tools:
+    description: Composer Tools
+    required: false
+    default: composer
+
+outputs:
+
+  php-version:
+    description: Installed PHP Version
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Install PHP Runtime
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        extensions: ${{ inputs.extensions }}
+        coverage: ${{ inputs.coverage }}
+        tools: ${{ inputs.tools }}
+
+    # Display installed PHP version
+    - name: Show PHP Version
+      shell: pwsh
+      run: |
+        php --version
+        composer --version
+
+    # Export installed PHP version
+    - name: Export Version
+      id: version
+      shell: pwsh
+      run: |
+        $version = php -r "echo PHP_VERSION;"
+        "version=$version" >> $env:GITHUB_OUTPUT
+
+    # Publish setup summary
+    - name: Setup Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## PHP Runtime
+
+        | Item | Value |
+        |------|-------|
+        | PHP | ${{ inputs.php-version }} |
+        | Extensions | ${{ inputs.extensions }} |
+        | Composer | Installed |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

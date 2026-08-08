@@ -1,0 +1,154 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy Node.js PM2
+# Purpose  : Reusable workflow to deploy Node.js applications using PM2
+# Runner   : Self-hosted Runner (deploy)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Node.js PM2
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        description: GitHub Environment
+        required: true
+        type: string
+
+      artifact-name:
+        description: Build Artifact Name
+        required: true
+        type: string
+
+      package-path:
+        description: Download Location
+        required: false
+        default: artifact
+        type: string
+
+      host:
+        description: Linux VM Host
+        required: true
+        type: string
+
+      username:
+        description: SSH Username
+        required: true
+        type: string
+
+      target-path:
+        description: Deployment Folder
+        required: true
+        type: string
+
+      package-manager:
+        description: npm | yarn | pnpm
+        required: false
+        default: npm
+        type: string
+
+      install-command:
+        description: Install Command
+        required: false
+        default: ci
+        type: string
+
+      build-command:
+        description: Build Command
+        required: false
+        default: build
+        type: string
+
+      ecosystem-file:
+        description: PM2 Ecosystem File
+        required: false
+        default: ecosystem.config.js
+        type: string
+
+      app-name:
+        description: PM2 Application Name
+        required: true
+        type: string
+
+      clean-target:
+        description: Clean Deployment Folder
+        required: false
+        default: true
+        type: boolean
+
+      enable-health-check:
+        description: Execute Health Check
+        required: false
+        default: false
+        type: boolean
+
+      health-url:
+        description: Health Check URL
+        required: false
+        default: ""
+        type: string
+
+    secrets:
+
+      VM_SSH_KEY:
+        required: true
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  deploy:
+
+    name: Deploy Node PM2
+
+    runs-on:
+
+      - self-hosted
+      - deploy
+      - linux
+
+    environment:
+
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Download Artifact
+      - name: Download Artifact
+        uses: ./.github/actions/awl-download-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          download-path: ${{ inputs.package-path }}
+
+      # Deploy Application
+      - name: Deploy Node PM2
+        uses: ./.github/actions/awl-deploy-node-pm2
+        with:
+          host: ${{ inputs.host }}
+          username: ${{ inputs.username }}
+          ssh-private-key: ${{ secrets.VM_SSH_KEY }}
+          package-path: ${{ inputs.package-path }}
+          target-path: ${{ inputs.target-path }}
+          package-manager: ${{ inputs.package-manager }}
+          install-command: ${{ inputs.install-command }}
+          build-command: ${{ inputs.build-command }}
+          ecosystem-file: ${{ inputs.ecosystem-file }}
+          app-name: ${{ inputs.app-name }}
+          clean-target: ${{ inputs.clean-target }}
+
+      # Validate Deployment
+      - name: Health Check
+        if: inputs.enable-health-check && inputs.health-url != ''
+        uses: ./.github/actions/awl-health-check
+        with:
+          health-url: ${{ inputs.health-url }}

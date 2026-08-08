@@ -1,0 +1,167 @@
+# ==========================================================================================
+# Workflow : AWL - Build .NET Framework IIS
+# Purpose  : Build ASP.NET Framework application for IIS deployment
+# Runner   : Self-hosted Runner (Windows Build)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Build .NET Framework IIS
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      solution-path:
+        description: Solution File
+        required: true
+        type: string
+
+      project-path:
+        description: Web Project File
+        required: true
+        type: string
+
+      configuration:
+        description: Build Configuration
+        required: false
+        default: Release
+        type: string
+
+      platform:
+        description: Build Platform
+        required: false
+        default: "Any CPU"
+        type: string
+
+      msbuild-arguments:
+        description: Additional MSBuild Arguments
+        required: false
+        default: ""
+        type: string
+
+      artifact-name:
+        description: Artifact Name
+        required: true
+        type: string
+
+      artifact-path:
+        description: Package Output Folder
+        required: false
+        default: publish
+        type: string
+
+      retention-days:
+        description: Artifact Retention
+        required: false
+        default: 30
+        type: number
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  build:
+
+    name: Build ASP.NET Framework
+
+    runs-on:
+
+      - self-hosted
+      - build
+      - windows
+
+    defaults:
+
+      run:
+
+        shell: pwsh
+
+    outputs:
+
+      artifact-name: ${{ inputs.artifact-name }}
+
+      artifact-path: ${{ inputs.artifact-path }}
+
+    steps:
+
+      # Checkout source
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Validate MSBuild & NuGet
+      - name: Setup .NET Framework
+        id: setup
+        uses: ./.github/actions/awl-setup-dotnet-framework
+
+      # Restore NuGet packages
+      - name: Restore NuGet Packages
+        run: |
+          nuget restore "${{ inputs.solution-path }}"
+
+      # Build & Package for IIS
+      - name: Build Web Application
+        run: |
+
+          & "${{ steps.setup.outputs.msbuild-path }}" `
+            "${{ inputs.project-path }}" `
+            /t:Clean,Build `
+            /p:Configuration="${{ inputs.configuration }}" `
+            /p:Platform="${{ inputs.platform }}" `
+            /p:DeployOnBuild=true `
+            /p:WebPublishMethod=Package `
+            /p:PackageAsSingleFile=true `
+            /p:SkipInvalidConfigurations=true `
+            /p:PackageLocation="${{ github.workspace }}\${{ inputs.artifact-path }}" `
+            ${{ inputs.msbuild-arguments }}
+
+      # Validate package
+      - name: Validate Package
+        run: |
+
+          if(!(Test-Path "${{ github.workspace }}\${{ inputs.artifact-path }}"))
+          {
+              throw "Publish package not found."
+          }
+
+      # Display package files
+      - name: List Package
+        run: |
+
+          Get-ChildItem "${{ github.workspace }}\${{ inputs.artifact-path }}" -Recurse
+
+      # Upload artifact
+      - name: Upload Artifact
+        uses: ./.github/actions/awl-upload-artifact
+        with:
+
+          artifact-name: ${{ inputs.artifact-name }}
+
+          artifact-path: ${{ github.workspace }}\${{ inputs.artifact-path }}
+
+          retention-days: ${{ inputs.retention-days }}
+
+      # Build summary
+      - name: Build Summary
+        shell: pwsh
+        run: |
+
+          @"
+
+          ## ASP.NET Framework Build Summary
+
+          | Item | Value |
+          |------|-------|
+          | Runner | Windows Self-hosted |
+          | Configuration | ${{ inputs.configuration }} |
+          | Platform | ${{ inputs.platform }} |
+          | Solution | ${{ inputs.solution-path }} |
+          | Project | ${{ inputs.project-path }} |
+          | Artifact | ${{ inputs.artifact-name }} |
+          | Output | ${{ inputs.artifact-path }} |
+
+          "@ >> $env:GITHUB_STEP_SUMMARY

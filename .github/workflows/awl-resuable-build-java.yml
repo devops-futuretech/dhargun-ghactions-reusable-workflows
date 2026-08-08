@@ -1,0 +1,209 @@
+# ==========================================================================================
+# Workflow : AWL - Build Java
+# Purpose  : Reusable workflow to build Java applications using Maven or Gradle
+# Runner   : Self-hosted Runner (build)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Build Java
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      project-path:
+        description: Project working directory
+        required: false
+        default: "."
+        type: string
+
+      java-version:
+        description: Java JDK Version
+        required: false
+        default: "21"
+        type: string
+
+      distribution:
+        description: Java Distribution
+        required: false
+        default: "temurin"
+        type: string
+
+      build-tool:
+        description: maven or gradle
+        required: false
+        default: "maven"
+        type: string
+
+      configuration:
+        description: Build configuration
+        required: false
+        default: Release
+        type: string
+
+      run-tests:
+        description: Execute unit tests
+        required: false
+        default: true
+        type: boolean
+
+      build-command:
+        description: Custom build command (optional)
+        required: false
+        default: ""
+        type: string
+
+      artifact-name:
+        description: Artifact name
+        required: true
+        type: string
+
+      artifact-path:
+        description: Artifact folder
+        required: false
+        default: target
+        type: string
+
+      retention-days:
+        description: Artifact retention days
+        required: false
+        default: 30
+        type: number
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  build:
+
+    name: Build Java Application
+
+    runs-on:
+
+      - self-hosted
+      - build
+
+    defaults:
+
+      run:
+
+        shell: pwsh
+        working-directory: ${{ inputs.project-path }}
+
+    outputs:
+
+      artifact-name: ${{ inputs.artifact-name }}
+
+      artifact-path: ${{ inputs.artifact-path }}
+
+    steps:
+
+      # Checkout repository
+      - name: Checkout Source
+        uses: actions/checkout@v5
+
+      # Setup Java Runtime
+      - name: Setup Java
+        uses: ./.github/actions/awl-setup-java
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: ${{ inputs.distribution }}
+          cache: ${{ inputs.build-tool }}
+
+      # Validate Maven Wrapper
+      - name: Validate Maven Wrapper
+        if: inputs.build-tool == 'maven'
+        uses: takari/maven-wrapper-validation-action@v0.9.0
+
+      # Validate Gradle Wrapper
+      - name: Validate Gradle Wrapper
+        if: inputs.build-tool == 'gradle'
+        uses: gradle/actions/wrapper-validation@v4
+
+      # Build using Maven
+      - name: Build Maven Project
+        if: inputs.build-tool == 'maven' && inputs.build-command == ''
+        run: |
+
+          if("${{ inputs.run-tests }}" -eq "true")
+          {
+              ./mvnw clean package
+          }
+          else
+          {
+              ./mvnw clean package -DskipTests
+          }
+
+      # Build using Gradle
+      - name: Build Gradle Project
+        if: inputs.build-tool == 'gradle' && inputs.build-command == ''
+        run: |
+
+          if("${{ inputs.run-tests }}" -eq "true")
+          {
+              ./gradlew clean build
+          }
+          else
+          {
+              ./gradlew clean build -x test
+          }
+
+      # Execute custom build command
+      - name: Custom Build
+        if: inputs.build-command != ''
+        run: |
+          ${{ inputs.build-command }}
+
+      # Validate generated artifact
+      - name: Validate Artifact
+        run: |
+
+          if(!(Test-Path "${{ inputs.artifact-path }}"))
+          {
+              throw "Artifact folder not found."
+          }
+
+      # Display artifact files
+      - name: List Artifact Files
+        run: |
+
+          Get-ChildItem "${{ inputs.artifact-path }}" -Recurse
+
+      # Upload artifact
+      - name: Upload Artifact
+        uses: ./.github/actions/awl-upload-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          artifact-path: |
+            ${{ inputs.artifact-path }}/**/*.jar
+            ${{ inputs.artifact-path }}/**/*.war
+          retention-days: ${{ inputs.retention-days }}
+
+      # Publish workflow summary
+      - name: Build Summary
+        shell: pwsh
+        run: |
+
+          @"
+
+          ## Java Build Summary
+
+          | Item | Value |
+          |------|-------|
+          | Runner | Build |
+          | Java | ${{ inputs.java-version }} |
+          | Distribution | ${{ inputs.distribution }} |
+          | Build Tool | ${{ inputs.build-tool }} |
+          | Tests | ${{ inputs.run-tests }} |
+          | Artifact | ${{ inputs.artifact-name }} |
+          | Output | ${{ inputs.artifact-path }} |
+          | Repository | ${{ github.repository }} |
+          | Branch | ${{ github.ref_name }} |
+          | Commit | ${{ github.sha }} |
+
+          "@ >> $env:GITHUB_STEP_SUMMARY

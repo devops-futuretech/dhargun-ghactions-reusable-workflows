@@ -1,0 +1,95 @@
+# ==========================================================================================
+# Action    : AWL - Setup .NET Framework
+# Purpose   : Validate .NET Framework build tools on Self-Hosted Windows Runner
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Setup .NET Framework
+
+description: >
+  Composite action to validate Visual Studio Build Tools,
+  MSBuild and NuGet for .NET Framework builds.
+
+author: AWL DevOps Team
+
+inputs:
+
+  msbuild-version:
+    description: Preferred MSBuild Version
+    required: false
+    default: "17"
+
+  nuget-version:
+    description: Preferred NuGet Version
+    required: false
+    default: "latest"
+
+outputs:
+
+  msbuild-path:
+    description: MSBuild executable path
+    value: ${{ steps.msbuild.outputs.path }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Locate MSBuild using vswhere
+    - name: Locate MSBuild
+      id: msbuild
+      shell: pwsh
+      run: |
+
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+        if (!(Test-Path $vswhere))
+        {
+            throw "vswhere.exe not found."
+        }
+
+        $msbuild = & $vswhere `
+            -latest `
+            -requires Microsoft.Component.MSBuild `
+            -find MSBuild\**\Bin\MSBuild.exe
+
+        if (!$msbuild)
+        {
+            throw "MSBuild.exe not found."
+        }
+
+        "path=$msbuild" >> $env:GITHUB_OUTPUT
+
+        Write-Host "MSBuild : $msbuild"
+
+    # Validate MSBuild
+    - name: Show MSBuild Version
+      shell: pwsh
+      run: |
+        & "${{ steps.msbuild.outputs.path }}" -version
+
+    # Validate NuGet
+    - name: Show NuGet Version
+      shell: pwsh
+      run: |
+
+        nuget help
+
+    # Publish summary
+    - name: Setup Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## .NET Framework Runtime
+
+        | Item | Value |
+        |------|-------|
+        | MSBuild | Available |
+        | NuGet | Available |
+        | Runner | Self-hosted Windows |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

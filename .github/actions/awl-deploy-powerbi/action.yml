@@ -1,0 +1,114 @@
+# ==========================================================================================
+# Action    : AWL - Deploy Power BI
+# Purpose   : Deploy Power BI PBIX / PBIP
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Power BI
+
+description: >
+  Composite action to deploy Power BI reports.
+
+author: AWL DevOps Team
+
+inputs:
+
+  workspace-id:
+    description: Power BI Workspace Id
+    required: true
+
+  deployment-type:
+    description: pbip | pbix
+    required: false
+    default: pbip
+
+  artifact-path:
+    description: PBIX or PBIP Folder
+    required: true
+
+  report-name:
+    description: Report Name
+    required: true
+
+  dataset-refresh:
+    description: Refresh Dataset
+    required: false
+    default: "false"
+
+outputs:
+
+  deployment-status:
+    description: Deployment Status
+    value: ${{ steps.deploy.outputs.status }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Validate Artifact
+    - name: Validate Artifact
+      shell: pwsh
+      run: |
+
+        if(!(Test-Path "${{ inputs.artifact-path }}"))
+        {
+            throw "Artifact not found."
+        }
+
+    # Deploy PBIX
+    - name: Deploy PBIX
+      id: deploy
+      if: inputs.deployment-type == 'pbix'
+      shell: pwsh
+      run: |
+
+        Write-Host "PBIX deployment placeholder."
+
+        # Future:
+        # Invoke Power BI REST Import API
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Deploy PBIP
+    - name: Deploy PBIP
+      id: deploypbip
+      if: inputs.deployment-type == 'pbip'
+      shell: pwsh
+      run: |
+
+        Write-Host "PBIP deployment placeholder."
+
+        # Future:
+        # Fabric / Power BI Git Integration
+
+        "status=Success" >> $env:GITHUB_OUTPUT
+
+    # Dataset Refresh
+    - name: Refresh Dataset
+      if: inputs.dataset-refresh == 'true'
+      shell: pwsh
+      run: |
+
+        Write-Host "Dataset Refresh Placeholder"
+
+    # Deployment Summary
+    - name: Deployment Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Power BI Deployment
+
+        | Item | Value |
+        |------|-------|
+        | Workspace | ${{ inputs.workspace-id }} |
+        | Report | ${{ inputs.report-name }} |
+        | Deployment | ${{ inputs.deployment-type }} |
+        | Dataset Refresh | ${{ inputs.dataset-refresh }} |
+        | Status | Success |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

@@ -1,0 +1,94 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy Power BI
+# Purpose  : Deploy Power BI Reports
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Power BI
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        required: true
+        type: string
+
+      artifact-name:
+        required: true
+        type: string
+
+      artifact-path:
+        required: false
+        default: artifact
+        type: string
+
+      workspace-id:
+        required: true
+        type: string
+
+      report-name:
+        required: true
+        type: string
+
+      deployment-type:
+        required: false
+        default: pbip
+        type: string
+
+      dataset-refresh:
+        required: false
+        default: false
+        type: boolean
+
+    secrets:
+
+      POWERBI_CLIENT_ID:
+        required: true
+
+      POWERBI_CLIENT_SECRET:
+        required: true
+
+      POWERBI_TENANT_ID:
+        required: true
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  deploy:
+
+    runs-on:
+
+      - self-hosted
+
+      - deploy
+
+    environment:
+
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout Repository
+      - uses: actions/checkout@v5
+
+      # Download Artifact
+      - uses: ./.github/actions/awl-download-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          download-path: ${{ inputs.artifact-path }}
+
+      # Deploy Power BI
+      - uses: ./.github/actions/awl-deploy-powerbi
+        with:
+          workspace-id: ${{ inputs.workspace-id }}
+          deployment-type: ${{ inputs.deployment-type }}
+          artifact-path: ${{ inputs.artifact-path }}
+          report-name: ${{ inputs.report-name }}
+          dataset-refresh: ${{ inputs.dataset-refresh }}

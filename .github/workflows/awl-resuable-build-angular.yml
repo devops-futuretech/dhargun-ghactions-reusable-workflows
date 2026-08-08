@@ -1,0 +1,182 @@
+# ============================================================
+# Workflow Name : AWLABL - Build Angular
+# Purpose       : Reusable workflow for Angular applications
+# Version       : v1.0
+# ============================================================
+
+name: AWLABL - Build Angular
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      runner-label:
+        description: Self Hosted Runner Label
+        required: false
+        default: awl-runner
+        type: string
+
+      environment:
+        description: GitHub Environment
+        required: true
+        type: string
+
+      working-directory:
+        description: Angular Project Directory
+        required: false
+        default: .
+        type: string
+
+      project-name:
+        description: Angular Project Name
+        required: true
+        type: string
+
+      artifact-name:
+        description: Artifact Name
+        required: true
+        type: string
+
+      build-command:
+        description: Build Command
+        required: false
+        default: npm run build
+        type: string
+
+      publish-folder:
+        description: Build Output Folder
+        required: false
+        type: string
+
+      upload-artifact:
+        description: Upload Artifact
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+
+  build:
+
+    name: Build Angular
+
+    runs-on:
+
+      - self-hosted
+      - ${{ inputs.runner-label }}
+
+    environment: ${{ inputs.environment }}
+
+    defaults:
+
+      run:
+
+        shell: pwsh
+
+        working-directory: ${{ inputs.working-directory }}
+
+    outputs:
+
+      artifact-name: ${{ steps.publish.outputs.artifact-name }}
+
+      artifact-path: ${{ steps.publish.outputs.artifact-path }}
+
+    steps:
+
+    # Checkout Repository
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    # Display Context
+    - name: Display Build Context
+
+      run: |
+
+        Write-Host "Repository  : $env:GITHUB_REPOSITORY"
+        Write-Host "Branch      : $env:GITHUB_REF_NAME"
+        Write-Host "Runner      : $env:RUNNER_NAME"
+        Write-Host "Environment : ${{ inputs.environment }}"
+
+    # Setup Node
+    - name: Setup Node
+
+      uses: actions/setup-node@v4
+
+      with:
+
+        node-version: ${{ vars.NODE_VERSION }}
+
+        cache: npm
+
+        cache-dependency-path: "${{ inputs.working-directory }}/package-lock.json"
+
+    # Install Packages
+    - name: Install Dependencies
+
+      run: |
+
+        npm ci
+
+    # Angular Build
+    - name: Build Angular
+
+      run: |
+
+        $cmd="${{ inputs.build-command }}"
+
+        Invoke-Expression $cmd
+
+    # Publish
+    - name: Publish Artifact
+
+      id: publish
+
+      run: |
+
+        $publish="publish"
+
+        New-Item $publish -ItemType Directory -Force | Out-Null
+
+        if("${{ inputs.publish-folder }}" -eq "")
+        {
+            $source="dist/${{ inputs.project-name }}"
+        }
+        else
+        {
+            $source="${{ inputs.publish-folder }}"
+        }
+
+        Copy-Item "$source/*" $publish -Recurse -Force
+
+        echo "artifact-name=${{ inputs.artifact-name }}" >> $env:GITHUB_OUTPUT
+
+        echo "artifact-path=$publish" >> $env:GITHUB_OUTPUT
+
+    # Upload Artifact
+    - name: Upload Artifact
+
+      if: inputs.upload-artifact
+
+      uses: actions/upload-artifact@v4
+
+      with:
+
+        name: ${{ inputs.artifact-name }}
+
+        path: publish
+
+        retention-days: 30
+
+    # Summary
+    - name: Build Summary
+
+      run: |
+
+        Write-Host ""
+        Write-Host "Angular Build Completed Successfully"
+        Write-Host "Artifact : ${{ inputs.artifact-name }}"

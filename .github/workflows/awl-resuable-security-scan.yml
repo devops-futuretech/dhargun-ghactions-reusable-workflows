@@ -1,0 +1,105 @@
+# ==========================================================================================
+# Workflow : AWL - Security Scan   [PROPOSED — NOT YET IN THE PLATFORM REPO]
+# Purpose  : Common secret-scan + dependency-scan step, callable from every caller workflow
+#            instead of each repo re-declaring gitleaks/npm-audit/etc. inline.
+# Status   : DRAFT — the per-repo caller workflows in this package currently inline these
+#            steps directly (see "security-scan" job in each). Once this is reviewed and
+#            merged into the platform repo, every caller workflow's inline security-scan job
+#            can be replaced with a single `uses:` call to this file, keeping the pattern
+#            consistent with awl-common-validation.yml.
+# ==========================================================================================
+
+name: AWL - Security Scan
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      ecosystem:
+        description: npm | pip | maven | gradle | nuget | none
+        required: false
+        default: none
+        type: string
+
+      working-directory:
+        description: Project directory to scan
+        required: false
+        default: "."
+        type: string
+
+      fail-on-high:
+        description: Fail the job on HIGH/CRITICAL findings (start false, tighten later)
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  scan:
+
+    name: Security Scan
+
+    runs-on:
+      - self-hosted
+      - build
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Secret scanning — every ecosystem
+      - name: Secret Scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Dependency scanning — ecosystem specific
+      - name: Dependency Audit (npm)
+        if: inputs.ecosystem == 'npm'
+        run: npm audit --audit-level=high
+        continue-on-error: ${{ !inputs.fail-on-high }}
+
+      - name: Dependency Audit (pip)
+        if: inputs.ecosystem == 'pip'
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+        continue-on-error: ${{ !inputs.fail-on-high }}
+
+      - name: Dependency Audit (maven)
+        if: inputs.ecosystem == 'maven'
+        run: ./mvnw org.owasp:dependency-check-maven:check
+        continue-on-error: ${{ !inputs.fail-on-high }}
+
+      - name: Dependency Audit (gradle)
+        if: inputs.ecosystem == 'gradle'
+        run: ./gradlew dependencyCheckAnalyze
+        continue-on-error: ${{ !inputs.fail-on-high }}
+
+      - name: Dependency Audit (nuget)
+        if: inputs.ecosystem == 'nuget'
+        run: dotnet list package --vulnerable --include-transitive
+        continue-on-error: ${{ !inputs.fail-on-high }}
+
+# ------------------------------------------------------------------------------------------
+# REVIEW CHECKLIST:
+# 1. Decide the enforcement date — recommend "report only" (fail-on-high: false) for the
+#    first 2-3 sprints per repo while the team clears the existing findings backlog, then
+#    flip to true per repo once its baseline is clean.
+# 2. Add container/image scanning (trivy) once repos with Dockerfiles are onboarded
+#    (Chanakya backend, Genius Kitchen backend).
+# 3. Consider routing findings to a central dashboard (GitHub code scanning / Security tab)
+#    via SARIF upload instead of plain console output, for org-wide visibility.
+# ------------------------------------------------------------------------------------------

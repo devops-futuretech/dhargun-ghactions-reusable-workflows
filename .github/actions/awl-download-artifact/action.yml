@@ -1,0 +1,77 @@
+name: AWL - Download Artifact
+
+description: >
+  Composite action to download build artifacts for deployment workflows.
+
+author: AWL DevOps Team
+
+inputs:
+
+  artifact-name:
+    description: Name of artifact to download.
+    required: true
+
+  download-path:
+    description: Destination folder.
+    required: false
+    default: artifact
+
+  merge-multiple:
+    description: Merge multiple artifacts into one directory.
+    required: false
+    default: "false"
+
+outputs:
+
+  artifact-path:
+    description: Downloaded artifact path.
+    value: ${{ inputs.download-path }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Download artifact from current workflow.
+    - name: Download Artifact
+      uses: actions/download-artifact@v5
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.download-path }}
+        merge-multiple: ${{ inputs.merge-multiple }}
+
+    # Validate downloaded artifact.
+    - name: Validate Download
+      shell: pwsh
+      run: |
+
+        if (!(Test-Path "${{ inputs.download-path }}"))
+        {
+            throw "Downloaded artifact path not found."
+        }
+
+    # Display downloaded files.
+    - name: List Files
+      shell: pwsh
+      run: |
+
+        Write-Host "Downloaded Files"
+
+        Get-ChildItem "${{ inputs.download-path }}" -Recurse
+
+    # Publish workflow summary.
+    - name: Download Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Artifact Download
+
+        | Item | Value |
+        |------|-------|
+        | Artifact | ${{ inputs.artifact-name }} |
+        | Download Path | ${{ inputs.download-path }} |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

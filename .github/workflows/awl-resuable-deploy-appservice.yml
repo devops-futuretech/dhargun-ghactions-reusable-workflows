@@ -1,0 +1,163 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy Azure App Service
+# Purpose  : Reusable workflow for Azure App Service deployment
+# Runner   : Self-hosted Runner (deploy)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Azure App Service
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        description: GitHub Environment
+        required: true
+        type: string
+
+      resource-group:
+        description: Azure Resource Group
+        required: true
+        type: string
+
+      app-name:
+        description: Azure App Service Name
+        required: true
+        type: string
+
+      artifact-name:
+        description: Artifact Name
+        required: true
+        type: string
+
+      package-path:
+        description: Artifact Download Path
+        required: false
+        default: artifact
+        type: string
+
+      deployment-method:
+        description: zip | war | jar | run-from-package
+        required: false
+        default: zip
+        type: string
+
+      use-slot:
+        description: Deploy to Slot
+        required: false
+        default: false
+        type: boolean
+
+      slot-name:
+        description: Slot Name
+        required: false
+        default: staging
+        type: string
+
+      swap-slot:
+        description: Swap Slot
+        required: false
+        default: false
+        type: boolean
+
+      target-slot:
+        description: Target Slot
+        required: false
+        default: production
+        type: string
+
+      startup-command:
+        description: Linux Startup Command
+        required: false
+        default: ""
+        type: string
+
+      enable-health-check:
+        description: Execute Health Check
+        required: false
+        default: true
+        type: boolean
+
+      health-url:
+        description: Health Endpoint
+        required: false
+        default: ""
+        type: string
+
+    secrets:
+
+      AZURE_CLIENT_ID:
+        required: true
+
+      AZURE_TENANT_ID:
+        required: true
+
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+
+permissions:
+
+  id-token: write
+
+  contents: read
+
+jobs:
+
+  deploy:
+
+    name: Deploy App Service
+
+    runs-on:
+
+      - self-hosted
+      - deploy
+
+    environment:
+
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout repository
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Download deployment artifact
+      - name: Download Artifact
+        uses: ./.github/actions/awl-download-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          download-path: ${{ inputs.package-path }}
+
+      # Login to Azure
+      - name: Azure Login
+        uses: ./.github/actions/awl-azure-login
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Deploy Application
+      - name: Deploy Azure App Service
+        uses: ./.github/actions/awl-deploy-appservice
+        with:
+          resource-group: ${{ inputs.resource-group }}
+          app-name: ${{ inputs.app-name }}
+          package-path: ${{ inputs.package-path }}
+          deployment-method: ${{ inputs.deployment-method }}
+          use-slot: ${{ inputs.use-slot }}
+          slot-name: ${{ inputs.slot-name }}
+          swap-slot: ${{ inputs.swap-slot }}
+          target-slot: ${{ inputs.target-slot }}
+          startup-command: ${{ inputs.startup-command }}
+
+      # Validate deployment
+      - name: Health Check
+        if: inputs.enable-health-check && inputs.health-url != ''
+        uses: ./.github/actions/awl-health-check
+        with:
+          health-url: ${{ inputs.health-url }}

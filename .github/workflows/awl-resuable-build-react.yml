@@ -1,0 +1,227 @@
+# ==========================================================================================
+# Workflow : AWL - Build React
+# Purpose  : Reusable workflow to build React/Vite/Next.js applications
+# Runner   : Self-hosted Runner (build)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Build React
+
+on:
+  workflow_call:
+
+    inputs:
+
+      working-directory:
+        description: Application working directory
+        required: false
+        default: "."
+        type: string
+
+      node-version:
+        description: Node.js version
+        required: false
+        default: "22"
+        type: string
+
+      package-manager:
+        description: npm | yarn | pnpm
+        required: false
+        default: npm
+        type: string
+
+      install-command:
+        description: Dependency install command
+        required: false
+        default: ci
+        type: string
+
+      build-command:
+        description: Build command
+        required: false
+        default: build
+        type: string
+
+      enable-tests:
+        description: Execute tests
+        required: false
+        default: false
+        type: boolean
+
+      test-command:
+        description: Test command
+        required: false
+        default: test
+        type: string
+
+      artifact-name:
+        description: Artifact name
+        required: true
+        type: string
+
+      artifact-path:
+        description: Build output folder
+        required: false
+        default: dist
+        type: string
+
+      retention-days:
+        description: Artifact retention
+        required: false
+        default: 30
+        type: number
+
+permissions:
+  contents: read
+
+jobs:
+
+  build:
+
+    name: Build React Application
+
+    runs-on:
+      - self-hosted
+      - build
+
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ${{ inputs.working-directory }}
+
+    outputs:
+
+      artifact-name: ${{ inputs.artifact-name }}
+
+      artifact-path: ${{ inputs.artifact-path }}
+
+    steps:
+
+      # Checkout repository
+      - name: Checkout Source
+        uses: actions/checkout@v5
+
+      # Setup Node Runtime
+      - name: Setup Node
+        uses: ./.github/actions/awl-setup-node
+        with:
+          node-version: ${{ inputs.node-version }}
+          package-manager: ${{ inputs.package-manager }}
+
+      # Install project dependencies
+      - name: Install Dependencies
+        run: |
+
+          switch ("${{ inputs.package-manager }}")
+          {
+
+            "npm"
+            {
+                npm ${{ inputs.install-command }}
+            }
+
+            "yarn"
+            {
+                yarn install
+            }
+
+            "pnpm"
+            {
+                pnpm install
+            }
+
+            default
+            {
+                throw "Unsupported Package Manager"
+            }
+
+          }
+
+      # Execute unit tests
+      - name: Run Tests
+        if: inputs.enable-tests
+        run: |
+
+          switch ("${{ inputs.package-manager }}")
+          {
+
+            "npm"
+            {
+                npm run ${{ inputs.test-command }}
+            }
+
+            "yarn"
+            {
+                yarn ${{ inputs.test-command }}
+            }
+
+            "pnpm"
+            {
+                pnpm ${{ inputs.test-command }}
+            }
+
+          }
+
+      # Execute production build
+      - name: Build Application
+        run: |
+
+          switch ("${{ inputs.package-manager }}")
+          {
+
+            "npm"
+            {
+                npm run ${{ inputs.build-command }}
+            }
+
+            "yarn"
+            {
+                yarn ${{ inputs.build-command }}
+            }
+
+            "pnpm"
+            {
+                pnpm ${{ inputs.build-command }}
+            }
+
+          }
+
+      # Validate build output
+      - name: Validate Artifact
+        run: |
+
+          if(!(Test-Path "${{ inputs.artifact-path }}"))
+          {
+              throw "Build output not found."
+          }
+
+      # Upload artifact
+      - name: Upload Build Artifact
+        uses: ./.github/actions/awl-upload-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          artifact-path: ${{ inputs.artifact-path }}
+          retention-days: ${{ inputs.retention-days }}
+
+      # Publish workflow summary
+      - name: Build Summary
+        shell: pwsh
+        run: |
+
+          @"
+
+          ## React Build Summary
+
+          | Item | Value |
+          |------|-------|
+          | Runner | Build |
+          | Node | ${{ inputs.node-version }} |
+          | Package Manager | ${{ inputs.package-manager }} |
+          | Artifact | ${{ inputs.artifact-name }} |
+          | Output | ${{ inputs.artifact-path }} |
+          | Repository | ${{ github.repository }} |
+          | Branch | ${{ github.ref_name }} |
+          | Commit | ${{ github.sha }} |
+
+          "@ >> $env:GITHUB_STEP_SUMMARY

@@ -1,0 +1,119 @@
+# ==========================================================================================
+# Workflow : AWL - Build Android Kotlin
+# Purpose  : Build Android APK/AAB using Gradle
+# Runner   : Self-hosted Runner (build)
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Build Android Kotlin
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      working-directory:
+        type: string
+        default: "."
+
+      java-version:
+        type: string
+        default: "21"
+
+      build-type:
+        type: string
+        default: Release
+
+      artifact-name:
+        type: string
+        required: true
+
+      artifact-path:
+        type: string
+        default: app/build/outputs
+
+      retention-days:
+        type: number
+        default: 30
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  build:
+
+    runs-on:
+
+      - self-hosted
+      - build
+
+    defaults:
+
+      run:
+
+        shell: pwsh
+
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+
+      # Checkout repository
+      - uses: actions/checkout@v5
+
+      # Setup Android environment
+      - uses: ./.github/actions/awl-setup-android
+        with:
+          java-version: ${{ inputs.java-version }}
+
+      # Build Release APK
+      - name: Build APK
+        run: |
+
+          if("${{ inputs.build-type }}" -eq "Debug")
+          {
+              ./gradlew assembleDebug
+          }
+          else
+          {
+              ./gradlew assembleRelease
+          }
+
+      # Validate artifact
+      - name: Validate Artifact
+        run: |
+
+          if(!(Test-Path "${{ inputs.artifact-path }}"))
+          {
+              throw "APK output not found."
+          }
+
+      # Upload artifact
+      - name: Upload Artifact
+        uses: ./.github/actions/awl-upload-artifact
+        with:
+
+          artifact-name: ${{ inputs.artifact-name }}
+
+          artifact-path: ${{ inputs.artifact-path }}
+
+          retention-days: ${{ inputs.retention-days }}
+
+      # Publish summary
+      - name: Build Summary
+        shell: pwsh
+        run: |
+
+          @"
+
+          ## Android Build Summary
+
+          | Item | Value |
+          |------|-------|
+          | Java | ${{ inputs.java-version }} |
+          | Build | ${{ inputs.build-type }} |
+          | Artifact | ${{ inputs.artifact-name }} |
+
+          "@ >> $env:GITHUB_STEP_SUMMARY

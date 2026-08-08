@@ -1,0 +1,78 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy Firebase Hosting
+# Purpose  : Deploy static website to Firebase Hosting
+# ==========================================================================================
+
+name: AWL - Deploy Firebase Hosting
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        required: true
+        type: string
+
+      artifact-name:
+        required: true
+        type: string
+
+      artifact-path:
+        required: false
+        default: artifact
+        type: string
+
+      project-id:
+        required: true
+        type: string
+
+      target:
+        required: false
+        default: default
+        type: string
+
+    secrets:
+
+      FIREBASE_TOKEN:
+        required: true
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  deploy:
+
+    runs-on:
+
+      - self-hosted
+      - deploy
+
+    environment:
+
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout Repository
+      - uses: actions/checkout@v5
+
+      # Download Artifact
+      - uses: ./.github/actions/awl-download-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          download-path: ${{ inputs.artifact-path }}
+
+      # Setup Firebase CLI
+      - uses: ./.github/actions/awl-setup-firebase
+
+      # Deploy Hosting
+      - uses: ./.github/actions/awl-deploy-firebase-hosting
+        with:
+          project-id: ${{ inputs.project-id }}
+          artifact-path: ${{ inputs.artifact-path }}
+          firebase-token: ${{ secrets.FIREBASE_TOKEN }}
+          target: ${{ inputs.target }}

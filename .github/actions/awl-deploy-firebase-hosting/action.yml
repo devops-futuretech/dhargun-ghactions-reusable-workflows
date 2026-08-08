@@ -1,0 +1,86 @@
+# ==========================================================================================
+# Action    : AWL - Deploy Firebase Hosting
+# Purpose   : Deploy static website to Firebase Hosting
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Firebase Hosting
+
+description: >
+  Composite action to deploy static websites to Firebase Hosting.
+
+author: AWL DevOps Team
+
+inputs:
+
+  project-id:
+    description: Firebase Project ID
+    required: true
+
+  artifact-path:
+    description: Deployment Artifact Path
+    required: true
+
+  firebase-token:
+    description: Firebase CI Token
+    required: true
+
+  target:
+    description: Firebase Hosting Target
+    required: false
+    default: default
+
+outputs:
+
+  deployment-status:
+    description: Deployment Status
+    value: ${{ steps.deploy.outputs.status }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Validate deployment artifact
+    - name: Validate Artifact
+      shell: bash
+      run: |
+
+        if [ ! -d "${{ inputs.artifact-path }}" ]; then
+          echo "Artifact folder not found."
+          exit 1
+        fi
+
+    # Deploy Firebase Hosting
+    - name: Deploy Hosting
+      id: deploy
+      shell: bash
+      env:
+        FIREBASE_TOKEN: ${{ inputs.firebase-token }}
+      run: |
+
+        firebase deploy \
+          --only hosting:${{ inputs.target }} \
+          --project "${{ inputs.project-id }}" \
+          --non-interactive
+
+        echo "status=Success" >> "$GITHUB_OUTPUT"
+
+    # Deployment Summary
+    - name: Deployment Summary
+      shell: bash
+      run: |
+
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+
+        ## Firebase Hosting Deployment
+
+        | Item | Value |
+        |------|-------|
+        | Project | ${{ inputs.project-id }} |
+        | Target | ${{ inputs.target }} |
+        | Status | Success |
+
+        EOF

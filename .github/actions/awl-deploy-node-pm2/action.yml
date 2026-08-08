@@ -1,0 +1,298 @@
+# ==========================================================================================
+# Action    : AWL - Deploy Node.js PM2
+# Purpose   : Deploy Node.js application using PM2
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Node.js PM2
+
+description: >
+  Composite action to deploy Node.js applications using PM2.
+
+author: AWL DevOps Team
+
+inputs:
+
+  host:
+    description: Linux VM Host
+    required: true
+
+  username:
+    description: SSH Username
+    required: true
+
+  ssh-private-key:
+    description: SSH Private Key
+    required: true
+
+  package-path:
+    description: Build Artifact
+    required: true
+
+  target-path:
+    description: Deployment Folder
+    required: true
+
+  package-manager:
+    description: npm | yarn | pnpm
+    required: false
+    default: npm
+
+  install-command:
+    description: Dependency Installation
+    required: false
+    default: ci
+
+  build-command:
+    description: Build Script
+    required: false
+    default: build
+
+  ecosystem-file:
+    description: PM2 Ecosystem File
+    required: false
+    default: ecosystem.config.js
+
+  app-name:
+    description: PM2 Application Name
+    required: true
+
+  clean-target:
+    description: Clean Deployment Folder
+    required: false
+    default: "true"
+
+outputs:
+
+  deployment-status:
+    description: Deployment Status
+    value: ${{ steps.deploy.outputs.status }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Configure SSH
+    - name: Configure SSH
+      shell: bash
+      run: |
+
+        mkdir -p ~/.ssh
+
+        echo "${{ inputs.ssh-private-key }}" > ~/.ssh/id_rsa
+
+        chmod 600 ~/.ssh/id_rsa
+
+        ssh-keyscan -H ${{ inputs.host }} >> ~/.ssh/known_hosts
+
+    # Validate deployment package
+    - name: Validate Package
+      shell: bash
+      run: |
+
+        if [ ! -e "${{ inputs.package-path }}" ]; then
+          echo "Deployment package not found."
+          exit 1
+        fi
+
+    # Create deployment directory
+    - name: Prepare Deployment Folder
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} \
+        "mkdir -p '${{ inputs.target-path }}'"
+
+    # Clean deployment folder
+    - name: Clean Deployment Folder
+      if: inputs.clean-target == 'true'
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} \
+        "rm -rf '${{ inputs.target-path }}'/*"
+
+    # Copy application package
+    - name: Copy Application
+      shell: bash
+      run: |
+
+        scp -r \
+          "${{ inputs.package-path }}" \
+          "${{ inputs.username }}@${{ inputs.host }}:${{ inputs.target-path }}"
+        # Extract Deployment Package
+    - name: Extract Package
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        cd "${{ inputs.target-path }}"
+
+        FILE=$(find . -maxdepth 1 -name "*.zip" | head -n 1)
+
+        if [ -n "$FILE" ]; then
+
+          unzip -o "$FILE"
+
+          rm -f "$FILE"
+
+        fi
+
+        EOF
+
+    # Install Dependencies
+    - name: Install Dependencies
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        cd "${{ inputs.target-path }}"
+
+        case "${{ inputs.package-manager }}" in
+
+          npm)
+
+            npm ${{ inputs.install-command }}
+
+            ;;
+
+          yarn)
+
+            yarn install
+
+            ;;
+
+          pnpm)
+
+            pnpm install
+
+            ;;
+
+          *)
+
+            echo "Unsupported Package Manager"
+
+            exit 1
+
+            ;;
+
+        esac
+
+        EOF
+
+    # Build Application
+    - name: Build Application
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        cd "${{ inputs.target-path }}"
+
+        case "${{ inputs.package-manager }}" in
+
+          npm)
+
+            npm run ${{ inputs.build-command }}
+
+            ;;
+
+          yarn)
+
+            yarn ${{ inputs.build-command }}
+
+            ;;
+
+          pnpm)
+
+            pnpm ${{ inputs.build-command }}
+
+            ;;
+
+        esac
+
+        EOF
+
+    # Start / Reload PM2 Application
+    - name: Deploy using PM2
+      id: deploy
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        cd "${{ inputs.target-path }}"
+
+        if pm2 describe "${{ inputs.app-name }}" > /dev/null 2>&1
+        then
+
+            echo "Reloading existing PM2 application..."
+
+            pm2 reload "${{ inputs.ecosystem-file }}" \
+              --only "${{ inputs.app-name }}"
+
+        else
+
+            echo "Starting new PM2 application..."
+
+            pm2 start "${{ inputs.ecosystem-file }}" \
+              --only "${{ inputs.app-name }}"
+
+        fi
+
+        pm2 save
+
+        pm2 startup
+
+        EOF
+
+        echo "status=Success" >> "$GITHUB_OUTPUT"
+
+    # Verify PM2 Status
+    - name: Verify PM2 Process
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        pm2 list
+
+        pm2 describe "${{ inputs.app-name }}"
+
+        EOF
+
+    # Verify Application Files
+    - name: Verify Deployment Folder
+      shell: bash
+      run: |
+
+        ssh ${{ inputs.username }}@${{ inputs.host }} << EOF
+
+        ls -la "${{ inputs.target-path }}"
+
+        EOF
+
+    # Publish Deployment Summary
+    - name: Deployment Summary
+      shell: bash
+      run: |
+
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+
+        ## Node.js PM2 Deployment
+
+        | Item | Value |
+        |------|-------|
+        | Host | ${{ inputs.host }} |
+        | Application | ${{ inputs.app-name }} |
+        | Package Manager | ${{ inputs.package-manager }} |
+        | Deployment Folder | ${{ inputs.target-path }} |
+        | PM2 Ecosystem | ${{ inputs.ecosystem-file }} |
+        | Status | Success |
+
+        EOF

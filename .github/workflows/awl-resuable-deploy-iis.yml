@@ -1,0 +1,130 @@
+# ==========================================================================================
+# Workflow : AWL - Deploy IIS
+# Purpose  : Reusable workflow to deploy applications to Microsoft IIS
+# Runner   : Self-hosted Runner (deploy)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy IIS
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      environment:
+        description: GitHub Environment
+        required: true
+        type: string
+
+      artifact-name:
+        description: Build Artifact Name
+        required: true
+        type: string
+
+      package-path:
+        description: Download Location
+        required: false
+        default: artifact
+        type: string
+
+      site-name:
+        description: IIS Website
+        required: true
+        type: string
+
+      app-pool:
+        description: IIS Application Pool
+        required: true
+        type: string
+
+      physical-path:
+        description: IIS Physical Path
+        required: true
+        type: string
+
+      backup-enabled:
+        description: Backup Existing Website
+        required: false
+        default: true
+        type: boolean
+
+      backup-path:
+        description: Backup Folder
+        required: false
+        default: D:\IISBackups
+        type: string
+
+      clean-target:
+        description: Clean Target Folder
+        required: false
+        default: true
+        type: boolean
+
+      enable-health-check:
+        description: Execute Health Check
+        required: false
+        default: false
+        type: boolean
+
+      health-url:
+        description: Health Check URL
+        required: false
+        default: ""
+        type: string
+
+    permissions:
+
+      contents: read
+
+jobs:
+
+  deploy:
+
+    name: Deploy IIS Website
+
+    runs-on:
+
+      - self-hosted
+
+      - deploy
+
+      - windows
+
+    environment:
+
+      name: ${{ inputs.environment }}
+
+    steps:
+
+      # Checkout Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Download Build Artifact
+      - name: Download Artifact
+        uses: ./.github/actions/awl-download-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          download-path: ${{ inputs.package-path }}
+
+      # Deploy Application to IIS
+      - name: Deploy IIS
+        uses: ./.github/actions/awl-deploy-iis
+        with:
+          site-name: ${{ inputs.site-name }}
+          app-pool: ${{ inputs.app-pool }}
+          package-path: ${{ inputs.package-path }}
+          physical-path: ${{ inputs.physical-path }}
+          backup-enabled: ${{ inputs.backup-enabled }}
+          backup-path: ${{ inputs.backup-path }}
+          clean-target: ${{ inputs.clean-target }}
+
+      # Validate Deployment
+      - name: Health Check
+        if: inputs.enable-health-check && inputs.health-url != ''
+        uses: ./.github/actions/awl-health-check
+        with:
+          health-url: ${{ inputs.health-url }}

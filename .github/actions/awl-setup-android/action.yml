@@ -1,0 +1,85 @@
+# ==========================================================================================
+# Action    : AWL - Setup Android
+# Purpose   : Install Java & Android SDK for Android/Kotlin builds
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Setup Android
+
+description: >
+  Composite action to configure Java and Android SDK for Gradle builds.
+
+author: AWL DevOps Team
+
+inputs:
+
+  java-version:
+    description: Java Version
+    required: false
+    default: "21"
+
+  distribution:
+    description: Java Distribution
+    required: false
+    default: "temurin"
+
+  cache:
+    description: Gradle Cache
+    required: false
+    default: "gradle"
+
+outputs:
+
+  java-version:
+    description: Installed Java Version
+    value: ${{ steps.version.outputs.version }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Install Java
+    - name: Setup Java
+      uses: actions/setup-java@v5
+      with:
+        distribution: ${{ inputs.distribution }}
+        java-version: ${{ inputs.java-version }}
+        cache: ${{ inputs.cache }}
+
+    # Make Gradle executable
+    - name: Grant Execute Permission
+      shell: bash
+      run: chmod +x gradlew
+
+    # Display Java version
+    - name: Show Java Version
+      shell: pwsh
+      run: |
+        java -version
+
+    # Export Java version
+    - name: Export Version
+      id: version
+      shell: pwsh
+      run: |
+        $version = java -version 2>&1 | Select-Object -First 1
+        "version=$version" >> $env:GITHUB_OUTPUT
+
+    # Publish summary
+    - name: Setup Summary
+      shell: pwsh
+      run: |
+
+        @"
+
+        ## Android Runtime
+
+        | Item | Value |
+        |------|-------|
+        | Java | ${{ inputs.java-version }} |
+        | Cache | ${{ inputs.cache }} |
+
+        "@ >> $env:GITHUB_STEP_SUMMARY

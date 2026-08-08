@@ -1,0 +1,138 @@
+# ==========================================================================================
+# Workflow : AWL - Build Flutter Android
+# Purpose  : Reusable workflow to build Flutter Android APK/AAB
+# Runner   : Self-hosted Runner (build)
+# Author   : AWL DevOps Team
+# Version  : v1.0
+# ==========================================================================================
+
+name: AWL - Build Flutter Android
+
+on:
+
+  workflow_call:
+
+    inputs:
+
+      working-directory:
+        description: Flutter project directory
+        type: string
+        default: "."
+
+      flutter-version:
+        description: Flutter SDK Version
+        type: string
+        default: "stable"
+
+      java-version:
+        description: Java Version
+        type: string
+        default: "21"
+
+      build-type:
+        description: apk or appbundle
+        type: string
+        default: "apk"
+
+      build-mode:
+        description: debug, profile or release
+        type: string
+        default: "release"
+
+      artifact-name:
+        description: Artifact Name
+        type: string
+        required: true
+
+      artifact-path:
+        description: Flutter output folder
+        type: string
+        default: build/app/outputs
+
+      retention-days:
+        description: Artifact retention
+        type: number
+        default: 30
+
+permissions:
+
+  contents: read
+
+jobs:
+
+  build:
+
+    name: Build Flutter Android
+
+    runs-on:
+      - self-hosted
+      - build
+
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ${{ inputs.working-directory }}
+
+    outputs:
+      artifact-name: ${{ inputs.artifact-name }}
+      artifact-path: ${{ inputs.artifact-path }}
+
+    steps:
+
+      # Checkout source
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+
+      # Setup Flutter SDK
+      - name: Setup Flutter
+        uses: ./.github/actions/awl-setup-flutter
+        with:
+          flutter-version: ${{ inputs.flutter-version }}
+          java-version: ${{ inputs.java-version }}
+
+      # Build APK
+      - name: Build APK
+        if: inputs.build-type == 'apk'
+        run: |
+          flutter build apk --${{ inputs.build-mode }}
+
+      # Build App Bundle
+      - name: Build App Bundle
+        if: inputs.build-type == 'appbundle'
+        run: |
+          flutter build appbundle --${{ inputs.build-mode }}
+
+      # Validate build output
+      - name: Validate Artifact
+        run: |
+          if (!(Test-Path "${{ inputs.artifact-path }}"))
+          {
+              throw "Flutter build output not found."
+          }
+
+      # Upload artifact
+      - name: Upload Artifact
+        uses: ./.github/actions/awl-upload-artifact
+        with:
+          artifact-name: ${{ inputs.artifact-name }}
+          artifact-path: ${{ inputs.artifact-path }}
+          retention-days: ${{ inputs.retention-days }}
+
+      # Publish build summary
+      - name: Build Summary
+        shell: pwsh
+        run: |
+
+          @"
+
+          ## Flutter Build Summary
+
+          | Item | Value |
+          |------|-------|
+          | Flutter | ${{ inputs.flutter-version }} |
+          | Java | ${{ inputs.java-version }} |
+          | Build Type | ${{ inputs.build-type }} |
+          | Build Mode | ${{ inputs.build-mode }} |
+          | Artifact | ${{ inputs.artifact-name }} |
+
+          "@ >> $env:GITHUB_STEP_SUMMARY

@@ -1,0 +1,122 @@
+# ==========================================================================================
+# Action    : AWL - Deploy Firebase Functions
+# Purpose   : Deploy Firebase Cloud Functions
+# Author    : AWL DevOps Team
+# Version   : v1.0
+# ==========================================================================================
+
+name: AWL - Deploy Firebase Functions
+
+description: >
+  Composite action to deploy Firebase Cloud Functions.
+
+author: AWL DevOps Team
+
+inputs:
+
+  project-id:
+    description: Firebase Project ID
+    required: true
+
+  firebase-token:
+    description: Firebase CI Token
+    required: true
+
+  functions-target:
+    description: Function Name (optional)
+    required: false
+    default: ""
+
+outputs:
+
+  deployment-status:
+    description: Deployment Status
+    value: ${{ steps.deploy.outputs.status }}
+
+runs:
+
+  using: composite
+
+  steps:
+
+    # Validate firebase.json
+    - name: Validate Firebase Configuration
+      shell: bash
+      run: |
+
+        if [ ! -f firebase.json ]; then
+          echo "firebase.json not found."
+          exit 1
+        fi
+
+        if [ ! -d functions ]; then
+          echo "functions folder not found."
+          exit 1
+        fi
+
+    # Install Function Dependencies
+    - name: Install Dependencies
+      shell: bash
+      run: |
+
+        cd functions
+
+        npm ci
+
+    # Build Functions
+    - name: Build Functions
+      shell: bash
+      run: |
+
+        cd functions
+
+        npm run build --if-present
+
+    # Deploy All Functions
+    - name: Deploy Firebase Functions
+      id: deploy
+      if: inputs.functions-target == ''
+      shell: bash
+      env:
+        FIREBASE_TOKEN: ${{ inputs.firebase-token }}
+      run: |
+
+        firebase deploy \
+          --only functions \
+          --project "${{ inputs.project-id }}" \
+          --non-interactive
+
+        echo "status=Success" >> "$GITHUB_OUTPUT"
+
+    # Deploy Selected Function
+    - name: Deploy Selected Function
+      id: deploy-target
+      if: inputs.functions-target != ''
+      shell: bash
+      env:
+        FIREBASE_TOKEN: ${{ inputs.firebase-token }}
+      run: |
+
+        firebase deploy \
+          --only functions:${{ inputs.functions-target }} \
+          --project "${{ inputs.project-id }}" \
+          --non-interactive
+
+        echo "status=Success" >> "$GITHUB_OUTPUT"
+
+    # Deployment Summary
+    - name: Deployment Summary
+      shell: bash
+      run: |
+
+        cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+
+        ## Firebase Functions Deployment
+
+        | Item | Value |
+        |------|-------|
+        | Project | ${{ inputs.project-id }} |
+        | Function | ${{ inputs.functions-target }} |
+        | Status | Success |
+
+        EOF
