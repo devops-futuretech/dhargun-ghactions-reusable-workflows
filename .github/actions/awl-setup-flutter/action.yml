@@ -64,8 +64,8 @@ runs:
     # Install Flutter packages
     - name: Flutter Pub Get
       shell: pwsh
-      run: |
-        flutter pub get
+      working-directory: ${{ inputs.working-directory }}
+      run: flutter pub get
 
     # Validate Flutter installation
     - name: Flutter Doctor

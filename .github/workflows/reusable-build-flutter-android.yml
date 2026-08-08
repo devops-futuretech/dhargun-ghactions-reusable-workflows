@@ -90,6 +90,7 @@ jobs:
         with:
           flutter-version: ${{ inputs.flutter-version }}
           java-version: ${{ inputs.java-version }}
+          working-directory: ${{ inputs.working-directory }}
 
       # Build APK
       - name: Build APK
