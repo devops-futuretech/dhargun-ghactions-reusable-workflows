@@ -47,9 +47,9 @@ jobs:
     name: Common Validation
 
     runs-on:
-
-      - self-hosted
-      - ${{ inputs.runner-label }}
+      - windows-latest
+      # - self-hosted
+      # - ${{ inputs.runner-label }}
 
     environment: ${{ inputs.environment }}
 
