@@ -65,8 +65,9 @@ jobs:
     name: Build Flutter Android
 
     runs-on:
-      - self-hosted
-      - build
+      # - self-hosted
+      # - build
+      - windows-latest
 
     defaults:
       run:
@@ -85,7 +86,7 @@ jobs:
 
       # Setup Flutter SDK
       - name: Setup Flutter
-        uses: ./.github/actions/awl-setup-flutter
+        uses: devops-futuretech/dhargun-ghactions-reusable-workflows/.github/actions/awl-setup-flutter@main
         with:
           flutter-version: ${{ inputs.flutter-version }}
           java-version: ${{ inputs.java-version }}
@@ -112,7 +113,7 @@ jobs:
 
       # Upload artifact
       - name: Upload Artifact
-        uses: ./.github/actions/awl-upload-artifact
+        uses: devops-futuretech/dhargun-ghactions-reusable-workflows/.github/actions/awl-upload-artifact@main
         with:
           artifact-name: ${{ inputs.artifact-name }}
           artifact-path: ${{ inputs.artifact-path }}
