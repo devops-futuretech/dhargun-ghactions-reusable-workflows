@@ -1,9 +1,19 @@
 # ==========================================================================================
 # Workflow : AWL - Build Flutter Android
 # Purpose  : Reusable workflow to build Flutter Android APK/AAB
-# Runner   : Self-hosted Runner (build)
+# Runner   : GitHub-hosted Windows runner
 # Author   : AWL DevOps Team
-# Version  : v1.0
+# Version  : v1.1
+#
+# Responsibilities:
+#   - Checkout application repository
+#   - Setup Java + Flutter
+#   - Configure Firebase google-services.json
+#   - Flutter clean
+#   - Flutter pub get
+#   - Build APK/AAB
+#   - Validate output
+#   - Upload artifact
 # ==========================================================================================
 
 name: AWL - Build Flutter Android
@@ -22,12 +32,27 @@ on:
       flutter-version:
         description: Flutter SDK Version
         type: string
-        default: "stable"
+        default: "3.38.4"
 
       java-version:
         description: Java Version
         type: string
         default: "21"
+
+      environment:
+        description: GitHub Environment
+        type: string
+        required: true
+
+      flavor:
+        description: Flutter Android flavor
+        type: string
+        required: true
+
+      target:
+        description: Flutter Dart entry point
+        type: string
+        required: true
 
       build-type:
         description: apk or appbundle
@@ -47,12 +72,18 @@ on:
       artifact-path:
         description: Flutter output folder
         type: string
-        default: build/app/outputs
+        default: "build/app/outputs"
 
       retention-days:
         description: Artifact retention
         type: number
         default: 30
+
+    secrets:
+
+      FIREBASE_GOOGLE_SERVICES_JSON:
+        description: Environment-specific Firebase google-services.json
+        required: true
 
 permissions:
 
@@ -64,75 +95,219 @@ jobs:
 
     name: Build Flutter Android
 
+    # This selects the GitHub Environment.
+    # Environment-specific secrets become available here.
+    environment:
+      name: ${{ inputs.environment }}
+
     runs-on:
-      # - self-hosted
-      # - build
       - windows-latest
 
     defaults:
+
       run:
+
         shell: pwsh
+
         working-directory: ${{ inputs.working-directory }}
 
     outputs:
+
       artifact-name: ${{ inputs.artifact-name }}
+
       artifact-path: ${{ inputs.artifact-path }}
 
     steps:
 
-      # Checkout source
+      # ====================================================================================
+      # CHECKOUT
+      # ====================================================================================
+
       - name: Checkout Repository
+
         uses: actions/checkout@v5
 
-      # Setup Flutter SDK
+      # ====================================================================================
+      # SETUP FLUTTER + JAVA
+      # ====================================================================================
+
       - name: Setup Flutter
+
         uses: devops-futuretech/dhargun-ghactions-reusable-workflows/.github/actions/awl-setup-flutter@main
+
         with:
+
           flutter-version: ${{ inputs.flutter-version }}
+
           java-version: ${{ inputs.java-version }}
-          working-directory: ${{ inputs.working-directory }}
 
-      # Build APK
-      - name: Build APK
-        if: inputs.build-type == 'apk'
-        run: |
-          flutter build apk --${{ inputs.build-mode }}
+      # ====================================================================================
+      # FIREBASE CONFIGURATION
+      #
+      # google-services.json is NOT committed to Git.
+      #
+      # It is stored as:
+      #
+      # GitHub Repository
+      #   -> Settings
+      #      -> Environments
+      #         -> DEV / UAT / STAGING / PROD
+      #            -> FIREBASE_GOOGLE_SERVICES_JSON
+      #
+      # The file is created only during the build.
+      # ====================================================================================
 
-      # Build App Bundle
-      - name: Build App Bundle
-        if: inputs.build-type == 'appbundle'
-        run: |
-          flutter build appbundle --${{ inputs.build-mode }}
+      - name: Configure Firebase
+        shell: pwsh
 
-      # Validate build output
-      - name: Validate Artifact
+        env:
+          FIREBASE_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+
         run: |
-          if (!(Test-Path "${{ inputs.artifact-path }}"))
+
+          $firebaseFile = "android/app/src/${{ inputs.flavor }}/google-services.json"
+
+          if ([string]::IsNullOrWhiteSpace($env:FIREBASE_JSON))
           {
-              throw "Flutter build output not found."
+              throw "FIREBASE_GOOGLE_SERVICES_JSON is not configured."
           }
 
-      # Upload artifact
+          $firebaseDirectory = Split-Path $firebaseFile -Parent
+
+          if (!(Test-Path $firebaseDirectory))
+          {
+              New-Item -ItemType Directory -Path $firebaseDirectory -Force | Out-Null
+          }
+
+          $env:FIREBASE_JSON | Set-Content `
+            -Path $firebaseFile `
+            -Encoding UTF8
+
+          if (!(Test-Path $firebaseFile))
+          {
+              throw "google-services.json was not created."
+          }
+
+          Write-Host "Firebase configuration created successfully."
+
+      # ====================================================================================
+      # FLUTTER CLEAN
+      # ====================================================================================
+
+      - name: Flutter Clean
+
+        run: |
+
+          flutter clean
+
+      # ====================================================================================
+      # FLUTTER PUB GET
+      # ====================================================================================
+
+      - name: Flutter Pub Get
+
+        run: |
+
+          flutter pub get
+
+      # ====================================================================================
+      # BUILD APK
+      # ====================================================================================
+
+      - name: Build APK
+
+        if: inputs.build-type == 'apk'
+
+        run: |
+
+          flutter build apk `
+            --${{ inputs.build-mode }} `
+            --flavor ${{ inputs.flavor }} `
+            -t ${{ inputs.target }}
+
+      # ====================================================================================
+      # BUILD APP BUNDLE
+      # ====================================================================================
+
+      - name: Build App Bundle
+
+        if: inputs.build-type == 'appbundle'
+
+        run: |
+
+          flutter build appbundle `
+            --${{ inputs.build-mode }} `
+            --flavor ${{ inputs.flavor }} `
+            -t ${{ inputs.target }}
+
+      # ====================================================================================
+      # VALIDATE BUILD OUTPUT
+      # ====================================================================================
+
+      - name: Validate Artifact
+
+        run: |
+
+          if (!(Test-Path "${{ inputs.artifact-path }}"))
+          {
+              throw "Flutter build output not found: ${{ inputs.artifact-path }}"
+          }
+
+          Write-Host "Flutter build output found."
+
+      # ====================================================================================
+      # SHOW BUILD FILES
+      # ====================================================================================
+
+      - name: Show Build Output
+
+        run: |
+
+          Write-Host "Build output:"
+
+          Get-ChildItem `
+            "${{ inputs.artifact-path }}" `
+            -Recurse `
+            -File |
+            Select-Object FullName, Length
+
+      # ====================================================================================
+      # UPLOAD ARTIFACT
+      # ====================================================================================
+
       - name: Upload Artifact
+
         uses: devops-futuretech/dhargun-ghactions-reusable-workflows/.github/actions/awl-upload-artifact@main
+
         with:
+
           artifact-name: ${{ inputs.artifact-name }}
+
           artifact-path: ${{ inputs.artifact-path }}
+
           retention-days: ${{ inputs.retention-days }}
 
-      # Publish build summary
+      # ====================================================================================
+      # BUILD SUMMARY
+      # ====================================================================================
+
       - name: Build Summary
+
         shell: pwsh
+
         run: |
 
           @"
 
-          ## Flutter Build Summary
+          ## Flutter Android Build Summary
 
           | Item | Value |
           |------|-------|
+          | Environment | ${{ inputs.environment }} |
           | Flutter | ${{ inputs.flutter-version }} |
           | Java | ${{ inputs.java-version }} |
+          | Flavor | ${{ inputs.flavor }} |
+          | Target | ${{ inputs.target }} |
           | Build Type | ${{ inputs.build-type }} |
           | Build Mode | ${{ inputs.build-mode }} |
           | Artifact | ${{ inputs.artifact-name }} |
