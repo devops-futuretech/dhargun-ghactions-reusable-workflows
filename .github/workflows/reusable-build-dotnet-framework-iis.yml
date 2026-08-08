@@ -71,9 +71,10 @@ jobs:
 
     runs-on:
 
-      - self-hosted
-      - build
-      - windows
+      # - self-hosted
+      # - build
+      # - windows
+      - windows-latest
 
     defaults:
 
@@ -96,7 +97,7 @@ jobs:
       # Validate MSBuild & NuGet
       - name: Setup .NET Framework
         id: setup
-        uses: ./.github/actions/awl-setup-dotnet-framework
+        uses: ./.github/actions/awl-setup-dotnetframework-iis
 
       # Restore NuGet packages
       - name: Restore NuGet Packages
