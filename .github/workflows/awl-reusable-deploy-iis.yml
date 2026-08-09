@@ -13,12 +13,11 @@ on:
   workflow_call:
 
     inputs:
-
       environment:
         description: GitHub Environment
         required: true
         type: string
-
+      
       artifact-name:
         description: Build Artifact Name
         required: true
