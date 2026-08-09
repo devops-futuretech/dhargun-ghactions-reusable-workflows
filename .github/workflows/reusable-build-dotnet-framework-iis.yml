@@ -13,6 +13,16 @@ on:
   workflow_call:
 
     inputs:
+      environment:
+        description: GitHub Environment
+        required: true
+        type: string
+
+      runner-label:
+        description: Self Hosted Runner Label
+        required: false
+        default: awl-runner
+        type: string
 
       solution-path:
         description: Solution File
@@ -20,7 +30,7 @@ on:
         type: string
 
       project-path:
-        description: Web Project File
+        description: Web Project path
         required: true
         type: string
 
@@ -67,7 +77,7 @@ jobs:
 
   build:
 
-    name: Build ASP.NET Framework
+    name: Build ASP.NET Framework IIS
 
     runs-on:
 
@@ -75,6 +85,8 @@ jobs:
       # - build
       # - windows
       - windows-latest
+  
+    environment: ${{ inputs.environment }}
 
     defaults:
 
@@ -93,7 +105,7 @@ jobs:
       # Checkout source
       - name: Checkout Repository
         uses: actions/checkout@v5
-
+   
       # Validate MSBuild & NuGet
       - name: Setup .NET Framework
         id: setup
@@ -103,6 +115,29 @@ jobs:
       - name: Restore NuGet Packages
         run: |
           nuget restore "${{ inputs.solution-path }}"
+          
+      # config preparation steps
+      - name: Prepare Application Configuration
+        shell: pwsh
+        env:
+          MVC_WEB_CONFIG: ${{ secrets.MVC_WEB_CONFIG }}
+          API_WEB_CONFIG: ${{ secrets.API_WEB_CONFIG }}
+        run: |
+          $mvcConfig = "${{ github.workspace }}\AdaniWilmar.Solution\Adani.Solution.MVC\Web.config"
+          $apiConfig = "${{ github.workspace }}\AdaniWilmar.Solution\Adani.Solution.API\Web.config"
+
+          if ([string]::IsNullOrWhiteSpace($env:MVC_WEB_CONFIG)) {
+              throw "MVC_WEB_CONFIG secret is not configured."
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:API_WEB_CONFIG)) {
+              throw "API_WEB_CONFIG secret is not configured."
+          }
+
+          $env:MVC_WEB_CONFIG | Set-Content -Path $mvcConfig -Encoding UTF8
+          $env:API_WEB_CONFIG | Set-Content -Path $apiConfig -Encoding UTF8
+
+          Write-Host "Application Web.config files prepared successfully."
 
       # Build & Package for IIS
       - name: Build Web Application
