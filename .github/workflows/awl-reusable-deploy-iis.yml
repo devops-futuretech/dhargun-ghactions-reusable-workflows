@@ -75,9 +75,8 @@ on:
         default: ""
         type: string
 
-    permissions:
-
-      contents: read
+permissions:
+  contents: read
 
 jobs:
 
