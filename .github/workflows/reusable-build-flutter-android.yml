@@ -209,7 +209,39 @@ jobs:
         run: |
 
           flutter pub get
+      #  android signing is required only for release builds.
+      - name: Configure Android Signing
+        shell: pwsh
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          $keystorePath = Join-Path $env:RUNNER_TEMP "adaniNew.jks"
 
+          if ([string]::IsNullOrWhiteSpace($env:ANDROID_KEYSTORE_BASE64))
+          {
+              throw "ANDROID_KEYSTORE_BASE64 secret is not configured."
+          }
+
+          [IO.File]::WriteAllBytes(
+              $keystorePath,
+              [Convert]::FromBase64String($env:ANDROID_KEYSTORE_BASE64)
+          )
+
+          if (!(Test-Path $keystorePath))
+          {
+              throw "Android keystore was not created."
+          }
+
+          Write-Host "Android keystore created successfully."
+          Write-Host "KEYSTORE_FILE=$keystorePath"
+
+          "KEYSTORE_FILE=$keystorePath" >> $env:GITHUB_ENV
+          "KEYSTORE_PASSWORD=$env:KEYSTORE_PASSWORD" >> $env:GITHUB_ENV
+          "KEY_ALIAS=$env:KEY_ALIAS" >> $env:GITHUB_ENV
+          "KEY_PASSWORD=$env:KEY_PASSWORD" >> $env:GITHUB_ENV
       # ====================================================================================
       # BUILD APK
       # ====================================================================================
@@ -224,7 +256,7 @@ jobs:
             --${{ inputs.build-mode }} `
             --flavor ${{ inputs.flavor }} `
             -t ${{ inputs.target }}
-
+      
       # ====================================================================================
       # BUILD APP BUNDLE
       # ====================================================================================
